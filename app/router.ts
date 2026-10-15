@@ -1,7 +1,7 @@
 import { createCookie, type Cookie } from 'remix/cookie'
 import type { Database } from 'remix/data-table'
+import type { FileStorage } from 'remix/file-storage'
 import { auth, createSessionAuthScheme } from 'remix/middleware/auth'
-import { formData } from 'remix/middleware/form-data'
 import { render } from 'remix/middleware/render'
 import { session } from 'remix/middleware/session'
 import { staticFiles } from 'remix/middleware/static'
@@ -16,27 +16,33 @@ import loginController from './actions/login/controller.tsx'
 import signupController from './actions/signup/controller.tsx'
 import { assets } from './assets.ts'
 import { users, type User } from './data/tables.ts'
+import { uploads as appUploads } from './data/uploads.ts'
 import { db as appDb } from './db.ts'
 import { loadDatabase } from './middleware/database.ts'
+import { parseFormData } from './middleware/form-data.ts'
+import { loadUploads } from './middleware/uploads.ts'
 import { routes } from './routes.ts'
 
 export interface AppRouterOptions {
   db?: Database
   sessionCookie?: Cookie
   sessionStorage?: SessionStorage
+  uploads?: FileStorage
 }
 
 export function createAppRouter(options: AppRouterOptions = {}) {
   let db = options.db ?? appDb
   let sessionCookie = options.sessionCookie ?? createSessionCookie()
   let sessionStorage = options.sessionStorage ?? createCookieSessionStorage()
+  let uploads = options.uploads ?? appUploads
 
   let router = createRouter({
     middleware: [
       staticFiles('./public', { index: false }),
       loadDatabase(db),
+      loadUploads(uploads),
       session(sessionCookie, sessionStorage),
-      formData(),
+      parseFormData(),
       auth({
         schemes: [
           createSessionAuthScheme<User, { userId: string }>({

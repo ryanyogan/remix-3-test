@@ -20,6 +20,9 @@ export const routes = route({
       // Create and move share one upsert, as in Trellix, so a drag can follow a pending create.
       upsertItem: post('/:boardId/items'),
       deleteItem: post('/:boardId/items/:itemId/delete'),
+      uploadFile: post('/:boardId/items/:itemId/files'),
+      file: get('/:boardId/files/:fileId'),
+      deleteFile: post('/:boardId/files/:fileId/delete'),
     }),
   }),
 })

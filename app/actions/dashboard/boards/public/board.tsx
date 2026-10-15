@@ -1,6 +1,7 @@
 import { clientEntry, css, on, ref } from 'remix/component'
 import type { Handle } from 'remix/component'
 
+import { limits } from '../../../../data/limits.ts'
 import { routes } from '../../../../routes.ts'
 import {
   appendPosition,
@@ -8,9 +9,12 @@ import {
   BoardStore,
   CARD_MIME_TYPE,
   dropPosition,
+  formatBytes,
   type BoardData,
+  type FileData,
   type ItemData,
 } from './board-model.ts'
+import { enableEntrances, enter, exit, glide } from './motion.ts'
 
 // A port of Trellix (github.com/remix-run/example-trellix). The server renders the board;
 // in the browser every edit renders immediately from BoardStore while the request runs, then
@@ -22,6 +26,7 @@ export const Board = clientEntry(
     let scroller: HTMLElement | undefined
 
     store.addEventListener('change', () => handle.update(), { signal: handle.signal })
+    handle.queueTask(enableEntrances)
     handle.frame.addEventListener('reloadComplete', () => store.reloaded(), {
       signal: handle.signal,
     })
@@ -52,7 +57,15 @@ export const Board = clientEntry(
           </h1>
 
           {store.error && (
-            <p role="alert" mix={alertStyle}>
+            <p
+              key="alert"
+              role="alert"
+              mix={[
+                alertStyle,
+                enter({ transform: 'translateY(-4px)' }),
+                exit({ transform: 'translateY(-4px)' }),
+              ]}
+            >
               {store.error}
               <button
                 type="button"
@@ -122,6 +135,7 @@ function Column(handle: Handle<ColumnProps>) {
         aria-label={name}
         mix={[
           columnStyle,
+          enter({ transform: 'translateX(12px)' }),
           // Dropping on the column (not on a card) appends to the end of the list.
           on('dragover', (event) => {
             if (!event.dataTransfer?.types.includes(CARD_MIME_TYPE)) return
@@ -236,6 +250,9 @@ function Card(handle: Handle<CardProps>) {
         data-accept-drop={acceptDrop === 'none' ? undefined : acceptDrop}
         mix={[
           cardSlotStyle,
+          enter(),
+          exit(),
+          glide(),
           on('dragover', (event) => {
             if (!event.dataTransfer?.types.includes(CARD_MIME_TYPE)) return
             event.preventDefault()
@@ -274,25 +291,41 @@ function Card(handle: Handle<CardProps>) {
             }),
           ]}
         >
-          <h3 mix={css({ margin: 0, fontSize: 'inherit', fontWeight: 400, paddingRight: '24px' })}>
+          <h3 mix={css({ margin: 0, fontSize: 'inherit', fontWeight: 400, paddingRight: '52px' })}>
             {item.title}
           </h3>
-          <form
-            method="post"
-            action={routes.dashboard.boards.deleteItem.href({ boardId, itemId: item.id })}
-            mix={on('submit', (event) => {
-              event.preventDefault()
-              store.submit({ type: 'deleteItem', id: item.id })
-            })}
-          >
-            <button
-              type="submit"
-              aria-label={`Delete card "${item.title}"`}
-              mix={deleteButtonStyle}
+          <div mix={cardActionsStyle}>
+            <AttachButton boardId={boardId} item={item} store={store} />
+            <form
+              method="post"
+              action={routes.dashboard.boards.deleteItem.href({ boardId, itemId: item.id })}
+              mix={on('submit', (event) => {
+                event.preventDefault()
+                store.submit({ type: 'deleteItem', id: item.id })
+              })}
             >
-              <TrashIcon />
-            </button>
-          </form>
+              <button
+                type="submit"
+                aria-label={`Delete card "${item.title}"`}
+                mix={iconButtonStyle}
+              >
+                <TrashIcon />
+              </button>
+            </form>
+          </div>
+          {item.files.length > 0 && (
+            <ul mix={fileListStyle}>
+              {item.files.map((file) => (
+                <Attachment
+                  key={file.id}
+                  boardId={boardId}
+                  itemId={item.id}
+                  file={file}
+                  store={store}
+                />
+              ))}
+            </ul>
+          )}
         </div>
       </li>
     )
@@ -308,6 +341,133 @@ interface NewCardProps {
   onComplete: () => void
 }
 
+interface AttachButtonProps {
+  boardId: string
+  item: ItemData
+  store: BoardStore
+}
+
+// Picking a file uploads it right away; the attachment shows as "Uploading…" until saved.
+function AttachButton(handle: Handle<AttachButtonProps>) {
+  return () => {
+    let { boardId, item, store } = handle.props
+    let inputId = `attach-${item.id}`
+    let full = item.files.length >= limits.filesPerCard
+
+    return (
+      <form
+        method="post"
+        encType="multipart/form-data"
+        action={routes.dashboard.boards.uploadFile.href({ boardId, itemId: item.id })}
+        mix={on('submit', (event) => {
+          event.preventDefault()
+          let input = event.currentTarget.elements.namedItem('file') as HTMLInputElement
+          let file = input.files?.[0]
+          input.value = ''
+          if (!file) return
+          if (file.size === 0) return store.reject('Choose a file that is not empty')
+          if (file.size > limits.fileBytes) {
+            return store.reject(`Files must be ${limits.fileLabel} or smaller`)
+          }
+          store.submit({ type: 'uploadFile', id: crypto.randomUUID(), itemId: item.id, file })
+        })}
+      >
+        <input
+          id={inputId}
+          type="file"
+          name="file"
+          disabled={full}
+          mix={[
+            visuallyHiddenStyle,
+            on('change', (event) => event.currentTarget.form?.requestSubmit()),
+          ]}
+        />
+        <label
+          htmlFor={inputId}
+          title={full ? `A card can hold up to ${limits.filesPerCard} files` : 'Attach a file'}
+          aria-label={`Attach a file to "${item.title}"`}
+          mix={[iconButtonStyle, attachLabelStyle]}
+          data-disabled={full ? '' : undefined}
+        >
+          <PaperclipIcon />
+        </label>
+      </form>
+    )
+  }
+}
+
+interface AttachmentProps {
+  boardId: string
+  itemId: string
+  file: FileData
+  store: BoardStore
+}
+
+function Attachment(handle: Handle<AttachmentProps>) {
+  return () => {
+    let { boardId, itemId, file, store } = handle.props
+    let href = routes.dashboard.boards.file.href({ boardId, fileId: file.id })
+    let thumbnail = !file.pending && isInlineImage(file.type)
+
+    return (
+      <li
+        mix={[
+          fileStyle,
+          enter({ transform: 'translateY(4px)' }),
+          exit({ transform: 'scale(0.97)' }),
+        ]}
+        data-pending={file.pending ? '' : undefined}
+      >
+        {thumbnail && (
+          <a href={href} target="_blank" rel="noopener" draggable={false} mix={thumbLinkStyle}>
+            <img src={href} alt={file.name} loading="lazy" draggable={false} mix={thumbStyle} />
+          </a>
+        )}
+        <div mix={fileRowStyle}>
+          {file.pending ? (
+            <span mix={fileNameStyle}>{file.name}</span>
+          ) : (
+            <a
+              href={href}
+              target={thumbnail ? '_blank' : undefined}
+              rel={thumbnail ? 'noopener' : undefined}
+              data-rmx-document
+              draggable={false}
+              mix={fileNameStyle}
+            >
+              {file.name}
+            </a>
+          )}
+          <span mix={fileMetaStyle}>{file.pending ? 'Uploading…' : formatBytes(file.size)}</span>
+          {!file.pending && (
+            <form
+              method="post"
+              action={routes.dashboard.boards.deleteFile.href({ boardId, fileId: file.id })}
+              mix={on('submit', (event) => {
+                event.preventDefault()
+                store.submit({ type: 'deleteFile', id: file.id, itemId })
+              })}
+            >
+              <button
+                type="submit"
+                aria-label={`Remove attachment "${file.name}"`}
+                mix={fileRemoveStyle}
+              >
+                ✕
+              </button>
+            </form>
+          )}
+        </div>
+      </li>
+    )
+  }
+}
+
+// Matches the server, which serves only these raster types inline.
+function isInlineImage(type: string) {
+  return ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'].includes(type)
+}
+
 // Stays open after each save so cards can be entered one after another, like Trellix.
 function NewCard(handle: Handle<NewCardProps>) {
   return () => {
@@ -319,6 +479,7 @@ function NewCard(handle: Handle<NewCardProps>) {
         action={routes.dashboard.boards.upsertItem.href({ boardId })}
         mix={[
           newCardStyle,
+          enter({ transform: 'translateY(-4px)' }),
           on('submit', (event) => {
             event.preventDefault()
             let textarea = event.currentTarget.elements.namedItem('title') as HTMLTextAreaElement
@@ -343,6 +504,7 @@ function NewCard(handle: Handle<NewCardProps>) {
           name="title"
           required
           rows={2}
+          maxLength={limits.cardTitle}
           aria-label="Card title"
           placeholder="Enter a title for this card"
           mix={[
@@ -417,6 +579,7 @@ function NewColumn(handle: Handle<NewColumnProps>) {
         mix={[
           columnStyle,
           newColumnStyle,
+          enter({ transform: 'translateX(12px)' }),
           on('submit', (event) => {
             event.preventDefault()
             let input = event.currentTarget.elements.namedItem('name') as HTMLInputElement
@@ -432,7 +595,7 @@ function NewColumn(handle: Handle<NewColumnProps>) {
         <input
           name="name"
           required
-          maxLength={100}
+          maxLength={limits.name}
           aria-label="Column name"
           placeholder="Column name"
           autoComplete="off"
@@ -527,7 +690,7 @@ function EditableText(handle: Handle<EditableTextProps>) {
         <input
           name="name"
           required
-          maxLength={100}
+          maxLength={limits.name}
           defaultValue={value}
           aria-label={inputLabel}
           autoComplete="off"
@@ -581,6 +744,20 @@ function dismissOnOutside(container: HTMLFormElement, signal: AbortSignal, onDis
       })
     },
     { signal },
+  )
+}
+
+function PaperclipIcon() {
+  return () => (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
+      <path
+        d="M13.5 7.5 8.1 12.9a3.25 3.25 0 0 1-4.6-4.6l5.6-5.6a2.1 2.1 0 0 1 3 3L6.6 11.2a1 1 0 0 1-1.4-1.4l5-5"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    </svg>
   )
 }
 
@@ -660,14 +837,25 @@ const cardStyle = css({
   border,
   cursor: 'grab',
   overflowWrap: 'anywhere',
-  '&:active': { cursor: 'grabbing' },
+  transition: 'box-shadow 160ms ease, transform 160ms ease',
+  '&:hover': { boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', transform: 'translateY(-1px)' },
+  '&:active': { cursor: 'grabbing', transform: 'none' },
   '& form': { margin: 0 },
+  '@media (prefers-reduced-motion: reduce)': {
+    transition: 'none',
+    '&:hover': { transform: 'none' },
+  },
 })
 
-const deleteButtonStyle = css({
+const cardActionsStyle = css({
   position: 'absolute',
   top: '6px',
   right: '6px',
+  display: 'flex',
+  gap: '2px',
+})
+
+const iconButtonStyle = css({
   display: 'grid',
   placeItems: 'center',
   width: '24px',
@@ -678,7 +866,96 @@ const deleteButtonStyle = css({
   background: 'transparent',
   color: 'var(--text-tertiary)',
   cursor: 'pointer',
+  transition: 'color 120ms ease, background-color 120ms ease',
   '&:hover, &:focus-visible': { color: 'var(--danger)', background: 'var(--surface-3)' },
+})
+
+const attachLabelStyle = css({
+  '&:hover, input:focus-visible + &': {
+    color: 'var(--brand-blue)',
+    background: 'var(--surface-3)',
+  },
+  'input:focus-visible + &': { outline: '2px solid var(--brand-blue)' },
+  '&[data-disabled]': { opacity: 0.4, cursor: 'not-allowed' },
+})
+
+const visuallyHiddenStyle = css({
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+})
+
+const fileListStyle = css({
+  listStyle: 'none',
+  margin: '8px 0 0',
+  padding: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '6px',
+})
+
+const fileStyle = css({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  '@keyframes trellix-uploading': {
+    '0%, 100%': { opacity: 1 },
+    '50%': { opacity: 0.45 },
+  },
+  '&[data-pending]': { animation: 'trellix-uploading 1.2s ease-in-out infinite' },
+  '@media (prefers-reduced-motion: reduce)': {
+    '&[data-pending]': { animation: 'none', opacity: 0.6 },
+  },
+})
+
+const thumbLinkStyle = css({ display: 'block', borderRadius: '6px', overflow: 'hidden' })
+
+const thumbStyle = css({
+  display: 'block',
+  width: '100%',
+  maxHeight: '140px',
+  objectFit: 'cover',
+  background: 'var(--surface-3)',
+})
+
+const fileRowStyle = css({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '3px 4px 3px 8px',
+  borderRadius: '6px',
+  background: 'var(--surface-3)',
+  fontSize: '12px',
+})
+
+const fileNameStyle = css({
+  flex: 1,
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: 'inherit',
+  textDecoration: 'none',
+  'a&:hover': { color: 'var(--brand-blue)', textDecoration: 'underline' },
+})
+
+const fileMetaStyle = css({ color: 'var(--text-tertiary)', whiteSpace: 'nowrap' })
+
+const fileRemoveStyle = css({
+  width: '20px',
+  height: '20px',
+  padding: 0,
+  border: 0,
+  borderRadius: '4px',
+  font: 'inherit',
+  fontSize: '11px',
+  background: 'transparent',
+  color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+  '&:hover, &:focus-visible': { color: 'var(--danger)', background: 'var(--surface-4)' },
 })
 
 const buttonBase = {

@@ -1,7 +1,15 @@
 import type { Database } from 'remix/data-table'
 import { inList } from 'remix/data-table'
+import type { FileStorage } from 'remix/file-storage'
 
-import { boardColumns, boardItems, boards, type Board } from '../../../data/tables.ts'
+import {
+  boardColumns,
+  boardItemFiles,
+  boardItems,
+  boards,
+  type Board,
+} from '../../../data/tables.ts'
+import { limits } from '../../../data/limits.ts'
 import type { BoardData } from './public/board-model.ts'
 
 // Columns every new board starts with. The overview charts read the first column as
@@ -18,9 +26,10 @@ export function listBoards(db: Database, userId: string): Promise<Board[]> {
 }
 
 export async function loadBoardData(db: Database, board: Board): Promise<BoardData> {
-  let [columns, items] = await Promise.all([
+  let [columns, items, files] = await Promise.all([
     db.findMany(boardColumns, { where: { board_id: board.id }, orderBy: ['position', 'asc'] }),
     db.findMany(boardItems, { where: { board_id: board.id }, orderBy: ['position', 'asc'] }),
+    db.findMany(boardItemFiles, { where: { board_id: board.id }, orderBy: ['created_at', 'asc'] }),
   ])
 
   return {
@@ -37,8 +46,53 @@ export async function loadBoardData(db: Database, board: Board): Promise<BoardDa
       columnId: item.column_id,
       title: item.title,
       position: Number(item.position),
+      files: files
+        .filter((file) => file.item_id === item.id)
+        .map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size })),
     })),
   }
+}
+
+// Stores an upload for a card. The storage key is the row id, never the client's file name.
+export async function attachFile(
+  db: Database,
+  storage: FileStorage,
+  boardId: string,
+  itemId: string,
+  values: { id: string; file: File },
+): Promise<'attached' | 'missing' | 'full'> {
+  let item = await db.find(boardItems, itemId)
+  if (item === null || item.board_id !== boardId) return 'missing'
+  if (await db.find(boardItemFiles, values.id)) return 'missing'
+  let count = await db.count(boardItemFiles, { where: { item_id: item.id } })
+  if (count >= limits.filesPerCard) return 'full'
+
+  let { file } = values
+  let name = file.name.trim().slice(0, limits.fileName) || 'file'
+  // Validate the row before writing bytes, so a rejected upload leaves nothing behind.
+  await db.transaction(async (tx) => {
+    await tx.create(boardItemFiles, {
+      id: values.id,
+      board_id: boardId,
+      item_id: item.id,
+      name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      created_at: Date.now(),
+    })
+    await storage.set(values.id, file)
+  })
+  return 'attached'
+}
+
+// Removes stored bytes for rows about to disappear, since the database cascade cannot.
+export async function removeStoredFiles(
+  db: Database,
+  storage: FileStorage,
+  where: { board_id: string } | { item_id: string } | { id: string },
+) {
+  let files = await db.findMany(boardItemFiles, { where })
+  await Promise.all(files.map((file) => storage.remove(file.id)))
 }
 
 export async function createBoard(

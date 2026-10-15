@@ -18,6 +18,17 @@ export const chartTokens = css({
   '--stage-progress': '#2a78d6',
   '--stage-done': '#184f95',
   '--chart-grid': 'color-mix(in srgb, var(--text-tertiary) 25%, transparent)',
+  '@keyframes chart-rise': {
+    from: { opacity: 0, transform: 'translateY(6px)' },
+    to: { opacity: 1, transform: 'none' },
+  },
+  '@keyframes chart-grow-x': { from: { transform: 'scaleX(0)' }, to: { transform: 'scaleX(1)' } },
+  '@keyframes chart-grow-y': { from: { transform: 'scaleY(0)' }, to: { transform: 'scaleY(1)' } },
+  '@keyframes chart-fade': { from: { opacity: 0 }, to: { opacity: 1 } },
+  // Entrance motion is CSS only, so it plays as the server-rendered page appears.
+  '@media (prefers-reduced-motion: reduce)': {
+    '& *': { animation: 'none !important' },
+  },
   '@media (prefers-color-scheme: dark)': {
     '--stage-todo': '#256abf',
     '--stage-progress': '#5598e7',
@@ -80,7 +91,14 @@ export function CompletionRing(handle: Handle<{ summary: ProgressSummary }>) {
 
     return (
       <figure mix={figureStyle}>
-        <svg viewBox="0 0 140 140" width="160" height="160" role="img" aria-label={ringLabel(sum)}>
+        <svg
+          viewBox="0 0 140 140"
+          width="160"
+          height="160"
+          role="img"
+          aria-label={ringLabel(sum)}
+          mix={ringStyle}
+        >
           <circle
             cx="70"
             cy="70"
@@ -247,6 +265,8 @@ export function CreatedChart(handle: Handle<{ summary: ProgressSummary }>) {
                   <path
                     d={roundedTopBar(x, height - bottom, barWidth, h)}
                     fill="var(--stage-progress)"
+                    mix={columnBarStyle}
+                    style={{ animationDelay: `${index * 25}ms` }}
                   />
                 )}
                 <title>
@@ -362,6 +382,10 @@ const tileStyle = css({
   padding: '16px 20px',
   borderRadius: '16px',
   background: 'var(--surface-3)',
+  animation: 'chart-rise 360ms ease-out both',
+  '&:nth-child(2)': { animationDelay: '40ms' },
+  '&:nth-child(3)': { animationDelay: '80ms' },
+  '&:nth-child(4)': { animationDelay: '120ms' },
 })
 
 const figureStyle = css({
@@ -418,7 +442,22 @@ const barLabelStyle = css({
 
 const barTrackStyle = css({ height: '16px', display: 'flex' })
 
-const barStyle = css({ display: 'flex', gap: '2px', minWidth: '2px' })
+const barStyle = css({
+  display: 'flex',
+  gap: '2px',
+  minWidth: '2px',
+  transformOrigin: 'left',
+  animation: 'chart-grow-x 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both',
+})
+
+// Columns grow up from the baseline, each a beat after the one before.
+const columnBarStyle = css({
+  transformBox: 'fill-box',
+  transformOrigin: 'bottom',
+  animation: 'chart-grow-y 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both',
+})
+
+const ringStyle = css({ animation: 'chart-fade 500ms ease-out both' })
 
 const segmentStyle = css({
   flexBasis: 0,

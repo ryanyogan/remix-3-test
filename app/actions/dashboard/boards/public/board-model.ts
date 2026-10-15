@@ -8,11 +8,21 @@ export interface ColumnData {
   position: number
 }
 
+export interface FileData {
+  id: string
+  name: string
+  type: string
+  size: number
+  // Still uploading: rendered from the pending mutation, with no server copy yet.
+  pending?: boolean
+}
+
 export interface ItemData {
   id: string
   columnId: string
   title: string
   position: number
+  files: FileData[]
 }
 
 export interface BoardData {
@@ -28,6 +38,8 @@ export type Mutation =
   | { type: 'upsertColumn'; id: string; name: string }
   | { type: 'upsertItem'; id: string; columnId: string; title: string; position: number }
   | { type: 'deleteItem'; id: string }
+  | { type: 'uploadFile'; id: string; itemId: string; file: File }
+  | { type: 'deleteFile'; id: string; itemId: string }
 
 export interface BoardView {
   name: string
@@ -48,6 +60,9 @@ export function mutationKey(mutation: Mutation): string {
     case 'upsertItem':
     case 'deleteItem':
       return `item:${mutation.id}`
+    case 'uploadFile':
+    case 'deleteFile':
+      return `file:${mutation.id}`
   }
 }
 
@@ -75,11 +90,26 @@ export function applyMutations(board: BoardData, mutations: Iterable<Mutation>):
           columnId: mutation.columnId,
           title: mutation.title,
           position: mutation.position,
+          files: items.get(mutation.id)?.files ?? [],
         })
         break
       case 'deleteItem':
         items.delete(mutation.id)
         break
+      case 'uploadFile': {
+        let item = items.get(mutation.itemId)
+        if (!item || item.files.some((file) => file.id === mutation.id)) break
+        let { name, type, size } = mutation.file
+        let file = { id: mutation.id, name, type, size, pending: true }
+        items.set(item.id, { ...item, files: [...item.files, file] })
+        break
+      }
+      case 'deleteFile': {
+        let item = items.get(mutation.itemId)
+        if (!item) break
+        items.set(item.id, { ...item, files: item.files.filter((file) => file.id !== mutation.id) })
+        break
+      }
     }
   }
 
@@ -128,7 +158,20 @@ export function mutationRequest(
       return { href: boards.upsertItem.href({ boardId }), body }
     case 'deleteItem':
       return { href: boards.deleteItem.href({ boardId, itemId: mutation.id }), body }
+    case 'uploadFile':
+      body.set('id', mutation.id)
+      body.set('file', mutation.file)
+      return { href: boards.uploadFile.href({ boardId, itemId: mutation.itemId }), body }
+    case 'deleteFile':
+      return { href: boards.deleteFile.href({ boardId, fileId: mutation.id }), body }
   }
+}
+
+// A file's size for display, e.g. "2.4 MB".
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 interface PendingMutation {
@@ -136,6 +179,8 @@ interface PendingMutation {
   controller: AbortController
   // The server accepted it; it stays applied until a reload brings back data that has it.
   settled: boolean
+  // Resolves once the request finishes, whether it succeeded, failed, or was replaced.
+  done: Promise<void>
 }
 
 // Owns the in-flight mutations for one board, like Remix 2's fetchers did for Trellix. Each
@@ -161,28 +206,44 @@ export class BoardStore extends TypedEventTarget<{ change: Event }> {
     let key = mutationKey(mutation)
     this.#pending.get(key)?.controller.abort()
 
-    let entry: PendingMutation = { mutation, controller: new AbortController(), settled: false }
+    let finished = Promise.withResolvers<void>()
+    let entry: PendingMutation = {
+      mutation,
+      controller: new AbortController(),
+      settled: false,
+      done: finished.promise,
+    }
     this.#pending.set(key, entry)
     this.error = null
     this.#emit()
 
-    let { href, body } = mutationRequest(this.#boardId, mutation)
     try {
+      // A file can be attached to a card whose create is still in flight; the upload waits
+      // for the card to exist on the server.
+      if (mutation.type === 'uploadFile') await this.#settledItem(mutation.itemId)
+      if (entry.controller.signal.aborted) return
+
+      let { href, body } = mutationRequest(this.#boardId, mutation)
       let response = await fetch(href, {
         method: 'POST',
         body,
         headers: { Accept: 'application/json' },
         signal: entry.controller.signal,
       })
-      if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+      if (!response.ok) throw new MutationError(await readError(response))
     } catch (error) {
       if (entry.controller.signal.aborted) return
       console.error('Board mutation failed', error)
       if (this.#pending.get(key) === entry) this.#pending.delete(key)
-      this.error = "Couldn't save that change. The board has been refreshed."
+      this.error =
+        error instanceof MutationError
+          ? error.message
+          : "Couldn't save that change. The board has been refreshed."
       this.#emit()
       void this.#reload()
       return
+    } finally {
+      finished.resolve()
     }
 
     if (this.#pending.get(key) !== entry) return
@@ -190,6 +251,22 @@ export class BoardStore extends TypedEventTarget<{ change: Event }> {
     // Each reload supersedes the previous one, and only the last to start reports completion,
     // so every settled mutation is covered by the reload that eventually completes.
     void this.#reload()
+  }
+
+  // Shows a problem caught before any request was sent, such as a file that is too large.
+  reject(message: string): void {
+    this.error = message
+    this.#emit()
+  }
+
+  async #settledItem(itemId: string) {
+    let pending = this.#pending.get(`item:${itemId}`)
+    while (pending && !pending.settled) {
+      await pending.done
+      let next = this.#pending.get(`item:${itemId}`)
+      if (next === pending) break
+      pending = next
+    }
   }
 
   // Call when a page reload completes: settled mutations are now part of the server data.
@@ -211,4 +288,17 @@ export class BoardStore extends TypedEventTarget<{ change: Event }> {
   #emit() {
     this.dispatchEvent(new Event('change'))
   }
+}
+
+// A request the server refused with a message meant for the user (validation, limits).
+class MutationError extends Error {}
+
+async function readError(response: Response): Promise<string> {
+  if (response.status >= 400 && response.status < 500) {
+    try {
+      let body = await response.json()
+      if (typeof body?.error === 'string') return body.error
+    } catch {}
+  }
+  return `Couldn't save that change (${response.status}). The board has been refreshed.`
 }

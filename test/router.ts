@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import * as assert from 'remix/assert'
 import { createCookie } from 'remix/cookie'
 import { createSqliteDatabase } from 'remix/data-table/sqlite'
+import { createMemoryFileStorage } from 'remix/file-storage/memory'
 import { createMemorySessionStorage } from 'remix/session-storage/memory'
 
 import { migrateDatabase } from '../app/db.ts'
@@ -10,18 +11,20 @@ import { routes } from '../app/routes.ts'
 
 export const origin = 'http://localhost'
 
-// A router backed by a fresh, migrated in-memory database and memory sessions.
+// A router backed by a fresh, migrated in-memory database, memory sessions, and memory uploads.
 export async function createTestRouter() {
   let db = createSqliteDatabase(new DatabaseSync(':memory:'))
   await migrateDatabase(db)
 
+  let uploads = createMemoryFileStorage()
   let router = createAppRouter({
     db,
+    uploads,
     sessionCookie: createCookie('session', { secrets: ['test-secret'] }),
     sessionStorage: createMemorySessionStorage(),
   })
 
-  return { db, router }
+  return { db, router, uploads }
 }
 
 export function getResponseCookie(response: Response, name: string): string {

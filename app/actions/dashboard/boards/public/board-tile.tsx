@@ -2,6 +2,7 @@ import { clientEntry, css, on } from 'remix/component'
 import type { Handle } from 'remix/component'
 
 import { routes } from '../../../../routes.ts'
+import { exit } from './motion.ts'
 
 interface BoardTileProps {
   id: string
@@ -21,7 +22,11 @@ export const BoardTile = clientEntry(
       if (deleting) return null
 
       return (
-        <li mix={tileStyle} style={{ borderBottomColor: color }}>
+        <li
+          key={id}
+          mix={[tileStyle, exit({ transform: 'scale(0.95)' })]}
+          style={{ borderBottomColor: color }}
+        >
           <a href={routes.dashboard.boards.show.href({ boardId: id })} mix={linkStyle}>
             <span mix={css({ fontWeight: 700 })}>{name}</span>
             <span mix={css({ color: 'var(--text-tertiary)', fontSize: '12px' })}>
@@ -67,8 +72,12 @@ const tileStyle = css({
   borderRadius: '12px',
   borderBottom: '6px solid',
   background: 'var(--surface-3)',
-  transition: 'box-shadow 150ms ease',
-  '&:hover': { boxShadow: '0 6px 18px rgb(0 0 0 / 0.12)' },
+  transition: 'box-shadow 160ms ease, transform 160ms ease',
+  '&:hover': { boxShadow: '0 6px 18px rgb(0 0 0 / 0.12)', transform: 'translateY(-2px)' },
+  '@media (prefers-reduced-motion: reduce)': {
+    transition: 'none',
+    '&:hover': { transform: 'none' },
+  },
   '& form': { margin: 0 },
 })
 

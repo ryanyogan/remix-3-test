@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { applyMutations, dropPosition, type BoardData } from './board-model.ts'
+import { applyMutations, dropPosition, formatBytes, type BoardData } from './board-model.ts'
 
 const board: BoardData = {
   id: 'b',
@@ -12,8 +12,14 @@ const board: BoardData = {
     { id: 'done', name: 'Done', position: 2 },
   ],
   items: [
-    { id: 'a', columnId: 'todo', title: 'A', position: 1 },
-    { id: 'b', columnId: 'todo', title: 'B', position: 2 },
+    { id: 'a', columnId: 'todo', title: 'A', position: 1, files: [] },
+    {
+      id: 'b',
+      columnId: 'todo',
+      title: 'B',
+      position: 2,
+      files: [{ id: 'f1', name: 'spec.pdf', type: 'application/pdf', size: 2048 }],
+    },
   ],
 }
 
@@ -46,6 +52,37 @@ describe('applyMutations', () => {
         ['Later', []],
       ],
     )
+  })
+})
+
+describe('file mutations', () => {
+  it('keeps attachments when a card moves', () => {
+    let view = applyMutations(board, [
+      { type: 'upsertItem', id: 'b', columnId: 'done', title: 'B', position: 1 },
+    ])
+    assert.deepEqual(
+      view.columns[1].items[0].files.map((file) => file.name),
+      ['spec.pdf'],
+    )
+  })
+
+  it('shows an upload as pending and hides a deleted file', () => {
+    let file = new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    let view = applyMutations(board, [
+      { type: 'uploadFile', id: 'f2', itemId: 'b', file },
+      { type: 'deleteFile', id: 'f1', itemId: 'b' },
+    ])
+    assert.deepEqual(view.columns[0].items[1].files, [
+      { id: 'f2', name: 'notes.txt', type: 'text/plain', size: 5, pending: true },
+    ])
+  })
+})
+
+describe('formatBytes', () => {
+  it('rounds to a readable unit', () => {
+    assert.equal(formatBytes(512), '512 B')
+    assert.equal(formatBytes(2048), '2 KB')
+    assert.equal(formatBytes(2.5 * 1024 * 1024), '2.5 MB')
   })
 })
 
