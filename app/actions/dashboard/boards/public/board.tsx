@@ -404,6 +404,8 @@ interface AttachmentProps {
 }
 
 function Attachment(handle: Handle<AttachmentProps>) {
+  let preview: HTMLDialogElement | undefined
+
   return () => {
     let { boardId, itemId, file, store } = handle.props
     let href = routes.dashboard.boards.file.href({ boardId, fileId: file.id })
@@ -419,9 +421,43 @@ function Attachment(handle: Handle<AttachmentProps>) {
         data-pending={file.pending ? '' : undefined}
       >
         {thumbnail && (
-          <a href={href} target="_blank" rel="noopener" draggable={false} mix={thumbLinkStyle}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener"
+            draggable={false}
+            mix={[
+              thumbLinkStyle,
+              on('click', (event) => {
+                if (!preview) return
+                event.preventDefault()
+                preview.showModal()
+              }),
+            ]}
+          >
             <img src={href} alt={file.name} loading="lazy" draggable={false} mix={thumbStyle} />
           </a>
+        )}
+        {thumbnail && (
+          // Esc closes it natively; clicks on the backdrop land on the dialog itself.
+          <dialog
+            aria-label={file.name}
+            mix={[
+              previewStyle,
+              ref((node) => (preview = node)),
+              on('click', (event) => {
+                if (event.target === event.currentTarget) event.currentTarget.close()
+              }),
+            ]}
+          >
+            <img src={href} alt={file.name} draggable={false} mix={previewImageStyle} />
+            <form method="dialog" mix={previewBarStyle}>
+              <span mix={fileNameStyle}>{file.name}</span>
+              <button type="submit" aria-label="Close preview" mix={fileRemoveStyle}>
+                ✕
+              </button>
+            </form>
+          </dialog>
         )}
         <div mix={fileRowStyle}>
           {file.pending ? (
@@ -919,6 +955,38 @@ const thumbStyle = css({
   maxHeight: '140px',
   objectFit: 'cover',
   background: 'var(--surface-3)',
+})
+
+const previewStyle = css({
+  padding: 0,
+  border: 0,
+  borderRadius: '10px',
+  maxWidth: 'min(92vw, 1200px)',
+  maxHeight: '92vh',
+  overflow: 'hidden',
+  background: 'var(--surface-3)',
+  color: 'inherit',
+  boxShadow: '0 20px 60px rgb(0 0 0 / 0.35)',
+  '&::backdrop': { background: 'rgb(0 0 0 / 0.6)' },
+  '&[open]': { display: 'flex', flexDirection: 'column' },
+})
+
+const previewImageStyle = css({
+  display: 'block',
+  minHeight: 0,
+  maxWidth: '100%',
+  maxHeight: 'calc(92vh - 36px)',
+  objectFit: 'contain',
+  margin: '0 auto',
+})
+
+const previewBarStyle = css({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  margin: 0,
+  padding: '6px 8px 6px 12px',
+  fontSize: '13px',
 })
 
 const fileRowStyle = css({
