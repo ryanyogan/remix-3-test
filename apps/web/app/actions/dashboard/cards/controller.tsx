@@ -5,7 +5,7 @@ import { dataResponse, input, downloadResponse } from '../data-response.ts'
 import { webCard } from './web-card.ts'
 import { createController } from 'remix/router'
 import { loadNavigation } from '@trellix/data/activity'
-import { findOwnedBoard, loadBoardData } from '@trellix/data/boards'
+import { findOwnedBoard, loadBoardColumns } from '@trellix/data/boards'
 import { loadCard } from '@trellix/data/cards'
 import { requireUser } from '../../../middleware/require-user.ts'
 import { readTheme } from '../../../ui/theme.ts'
@@ -138,7 +138,7 @@ export default createController(routes.dashboard.cards, {
             boards={navigation.boards}
             tags={navigation.tags}
             initialColumn={params.get('column') ?? undefined}
-            board={board ? await loadBoardData(context.db, board) : undefined}
+            board={board ? { id: board.id, name: board.name, columns: await loadBoardColumns(context.db, board.id) } : undefined}
           />
         </DashboardLayout>,
       )
@@ -147,13 +147,17 @@ export default createController(routes.dashboard.cards, {
       let user = context.auth.identity
       let board = await findOwnedBoard(context.db, user.id, context.params.boardId)
       if (!board) return new Response('Card not found', { status: 404 })
-      let detail = await loadCard(context.db, board.id, context.params.cardId)
+      let [detail, navigation, columns, theme] = await Promise.all([
+        loadCard(context.db, board.id, context.params.cardId),
+        loadNavigation(context.db, user.id),
+        loadBoardColumns(context.db, board.id),
+        readTheme(context.request),
+      ])
       if (!detail) return new Response('Card not found', { status: 404 })
-      let navigation = await loadNavigation(context.db, user.id)
       return context.render(
         <DashboardLayout
           user={user}
-          theme={await readTheme(context.request)}
+          theme={theme}
           navigation={navigation}
           title={detail.title}
           current="boards"
@@ -161,7 +165,7 @@ export default createController(routes.dashboard.cards, {
         >
           <CardPage
             user={{ id: user.id, name: user.name }}
-            board={await loadBoardData(context.db, board)}
+            board={{ id: board.id, name: board.name, columns }}
             detail={webCard(detail)}
             boards={navigation.boards}
             tags={navigation.tags}

@@ -11,6 +11,14 @@ export interface RichEditorElement extends HTMLElement {
   contents: { insertPendingAttachment(file: File): PendingAttachment | null }
 }
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'lexxy-editor': IntrinsicElements['div'] & { placeholder: string }
+    }
+  }
+}
+
 export function plainHtml(text: string) {
   return text ? '<p>' + text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') + '</p>' : ''
 }
@@ -20,7 +28,8 @@ export function RichEditor(handle: Handle<{
   onReady?: (editor: RichEditorElement) => void
   onUploading?: (blocked: boolean) => void
 }>) {
-  let mount: HTMLDivElement | undefined, editor: RichEditorElement | undefined
+  let initialValue = handle.props.value
+  let editor: RichEditorElement | undefined
   let failed = false, uploading = 0
   let failures: { id: number; file: File; message: string; retry: boolean }[] = [], sequence = 0
   let staged = new Set<string>(), requests = new Set<XMLHttpRequest>()
@@ -67,33 +76,33 @@ export function RichEditor(handle: Handle<{
       } finally { uploading--; if (!handle.signal.aborted) changed() }
     })
   }
+  function connect(node: HTMLElement) {
+    editor = node as RichEditorElement
+    // Listen before Lexxy's initialization event, including when its runtime is already loaded.
+    editor.addEventListener('lexxy:file-accept', event => {
+      event.preventDefault()
+      accept((event as CustomEvent<{ file: File }>).detail.file)
+    }, { signal: handle.signal })
+    editor.addEventListener('lexxy:initialize', () => handle.props.onReady?.(editor!), { signal: handle.signal })
+    editor.addEventListener('lexxy:change', () => handle.props.onChange(editor!.value, editor!.isBlank), { signal: handle.signal })
+    // Lexxy owns its value. A JSX value prop makes Remix restore it on native input events.
+    if (customElements.get('lexxy-editor')) editor.value = initialValue
+    else editor.setAttribute('value', initialValue)
+  }
   handle.queueTask(async () => {
+    handle.signal.addEventListener('abort', cleanup, { once: true })
+    window.addEventListener('pagehide', cleanup, { signal: handle.signal })
     try {
+      // Upgrade the server-rendered editor in place; its CSS reserves space before JS loads.
       // @ts-expect-error Generated browser ESM; built by scripts/build-editor.mjs.
       await import('../../../public/lexxy/runtime/lexxy.js')
-      await customElements.whenDefined('lexxy-editor')
-      if (handle.signal.aborted || !mount) return
-      editor = document.createElement('lexxy-editor') as RichEditorElement
-      editor.classList.add('lexxy-content')
-      editor.setAttribute('aria-label', handle.props.label)
-      editor.setAttribute('value', handle.props.value)
-      editor.setAttribute('placeholder', handle.props.placeholder)
-      editor.dataset.blobUrlTemplate = routes.dashboard.uploads.file.href({ fileId: ':signed_id' }).replace('%3Asigned_id', ':signed_id')
-      // Use Lexxy's pending-attachment interface rather than Rails Active Storage.
-      // This event covers toolbar selection, dropped files, and clipboard images.
-      editor.addEventListener('lexxy:file-accept', event => {
-        event.preventDefault()
-        accept((event as CustomEvent<{ file: File }>).detail.file)
-      }, { signal: handle.signal })
-      editor.addEventListener('lexxy:initialize', () => handle.props.onReady?.(editor!), { signal: handle.signal })
-      editor.addEventListener('lexxy:change', () => handle.props.onChange(editor!.value, editor!.isBlank), { signal: handle.signal })
-      handle.signal.addEventListener('abort', cleanup, { once: true })
-      window.addEventListener('pagehide', cleanup, { signal: handle.signal })
-      mount.replaceChildren(editor)
-    } catch { failed = true; handle.update() }
+    } catch { if (!handle.signal.aborted) { failed = true; handle.update() } }
   })
   return () => <div class="rich-editor-wrap">
-    <div class="rich-editor-mount" data-rmx-preserve-dom mix={ref(node => { mount = node })} />
+    <lexxy-editor class="lexxy-content" data-rmx-preserve-dom
+      aria-label={handle.props.label} data-initial-value={initialValue} placeholder={handle.props.placeholder}
+      data-blob-url-template={routes.dashboard.uploads.file.href({ fileId: ':signed_id' }).replace('%3Asigned_id', ':signed_id')}
+      mix={ref(connect)} />
     {uploading > 0 && <p class="editor-upload-status" role="status">Uploading {uploading === 1 ? 'attachment' : `${uploading} attachments`}…</p>}
     {failures.map(item => <div class="editor-upload-error" key={item.id} role="alert"><p><strong>{item.file.name}</strong>: {item.message}</p>
       {item.retry && <button type="button" mix={on('click', () => { failures = failures.filter(f => f.id !== item.id); accept(item.file); changed() })}>Retry upload</button>}

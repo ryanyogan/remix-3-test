@@ -51,6 +51,9 @@
 @layer theme, rmx;
 
 @layer theme {
+  /* Keep page widths steady when content starts or stops needing a scrollbar. */
+  html { scrollbar-gutter: stable; }
+
   /* ---------- Tokens shared by both themes ---------- */
   :root {
     --font-sans: "Adwaita Sans", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Fizzy", "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -1699,7 +1702,7 @@
 @layer theme {
   /* Keep absolutely positioned accessibility labels inside the horizontal scrollport. */
   .lanes { position: relative; }
-  html:has(dialog[open]) { overflow: hidden; }
+  html:has(dialog:modal) { overflow: hidden; }
   @media (max-width: 700px) {
     .topbar .search-trigger { width: 36px; height: 36px; padding: 8px; }
     .topbar .search-trigger > span, .topbar .search-trigger > kbd { display: none; }
@@ -1811,8 +1814,11 @@
   .dashboard-dock > a > .icon, .dashboard-dock > .search-trigger > .icon { display: none; }
   .dashboard-dock .search-trigger span { display: inline; }
   .dashboard-dock .search-trigger kbd { display: inline-grid; }
-  .jump-dialog { position: fixed; inset: 12px 0 auto; margin: 0 auto; width: min(640px, calc(100% - 24px)); max-width: none; max-height: calc(100dvh - 24px); overflow: auto; scrollbar-width: thin; padding: 30px 34px 0; border: 1px solid #a9caff; border-radius: 30px; color: var(--ink); background: var(--surface); box-shadow: 0 12px 30px #246fe21a, 0 0 0 1px #a9caff33; }
-  .jump-dialog::backdrop { background: transparent; }
+  .jump-dialog { position: fixed; z-index: 30; overscroll-behavior: contain; inset: 12px 0 auto; margin: 0 auto; width: min(640px, calc(100% - 24px)); max-width: none; max-height: calc(100dvh - 24px); overflow: auto; scrollbar-width: thin; padding: 30px 34px 0; border: 1px solid #a9caff; border-radius: 30px; color: var(--ink); background: var(--surface); box-shadow: 0 12px 30px #246fe21a, 0 0 0 1px #a9caff33; }
+  /* Fizzy's nonmodal popup grows from its top edge without changing page layout. */
+  .jump-dialog[open] { animation: jump-open var(--d-fast) ease-out; transform-origin: top center; }
+  @keyframes jump-open { from { opacity: 0; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .jump-dialog[open] { animation: none; } }
   .jump-input-wrap { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: 0 -10px 0 var(--surface), 0 8px 0 var(--surface); display: flex; align-items: center; gap: 8px; }
   .jump-input { width: 100%; min-width: 0; border: 2px solid var(--home-blue); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 11px 13px; font: 400 18px/1.4 var(--font-body); outline: none; }
   .jump-input:focus { box-shadow: 0 0 0 1px var(--home-blue); }
@@ -1893,7 +1899,7 @@
   }
 }
 
-@layer theme { html:has(.jump-dialog[open]) { overflow: hidden; } }
+
 
 /* Fizzy card-perma / cards / comments geometry, scoped away from board tiles. */
 @layer theme {
@@ -1966,10 +1972,12 @@
 }
 /* These override Lexxy's unlayered defaults, matching Fizzy's editor treatment. */
 .card-route-page { --lexxy-color-ink: var(--ink); --lexxy-color-ink-medium: var(--ink-3); --lexxy-color-canvas: var(--surface); --lexxy-color-accent-dark: var(--ink-2); --lexxy-color-selected: var(--accent-soft); --lexxy-color-ink-lightest: var(--line); }
-.card-route-page lexxy-editor { --lexxy-editor-padding: 0; --lexxy-toolbar-button-size: 30px; border: none; border-radius: 0; background: transparent; font: 400 19px/1.4 var(--font-body); color: inherit; }
+.card-route-page lexxy-editor { --lexxy-editor-padding: 0; --lexxy-editor-rows: 205px; --lexxy-toolbar-height: calc(var(--lexxy-toolbar-button-size) + 8px); --lexxy-toolbar-button-size: 30px; border: none; border-radius: 0; background: transparent; font: 400 19px/1.4 var(--font-body); color: inherit; }
 .card-route-page lexxy-toolbar { padding: 0 0 7px; gap: 0; border-bottom: 1px solid var(--line-strong); }
-.card-route-page .lexxy-editor__content { margin-top: 12px; min-height: 205px; padding: 0; }
-.card-route-page .perma-comment-compose .lexxy-editor__content { min-height: 205px; }
+/* Match the eventual toolbar, content gap and empty editing area before upgrade.
+   Keep Lexxy's built-in toolbar overflow on narrow screens instead of wrapping rows. */
+.card-route-page lexxy-editor:not(:defined) { min-block-size: calc(var(--lexxy-toolbar-height) + 12px + var(--lexxy-editor-rows)); }
+.card-route-page .lexxy-editor__content { margin-top: 12px; min-height: var(--lexxy-editor-rows); padding: 0; }
 .card-route-page .lexxy-editor__toolbar-button { background: transparent; }
 .card-route-page .lexxy-content { font-family: var(--font-body); }
 .card-route-page .lexxy-content h1, .card-route-page .lexxy-content h2, .card-route-page .lexxy-content h3 { font-weight: 800; }
@@ -1983,7 +1991,7 @@
   .perma-meta { flex-wrap: wrap; }.perma-meta-grid { font-size: 11px; }.perma-avatar { width: 36px; height: 36px; font-size: 16px; }.perma-assign { display: none; }.perma-reaction { width: 32px; height: 32px; padding: 3px; font-size: 18px; }
   .perma-actions { transform: none; margin: 0; }.perma-primary, .perma-secondary { font-size: 16px; padding: 8px 14px; }
   .perma-discussion { margin-top: 32px; }.perma-comment { gap: 6px; }.perma-comment > .perma-avatar { width: 32px; height: 32px; font-size: 15px; }.perma-comment-compose, .perma-comment-content { padding: 12px; }.perma-subscribers { margin: 30px 0 0 38px; }.perma-subscribers h2 { font-size: 16px; }
-  .card-route-page lexxy-editor { font-size: 16px; --lexxy-toolbar-button-size: 28px; }.card-route-page lexxy-toolbar { flex-wrap: wrap; }.card-route-page .lexxy-editor__content { min-height: 170px; }
+  .card-route-page lexxy-editor { font-size: 16px; --lexxy-toolbar-button-size: 28px; --lexxy-editor-rows: 170px; }
 }
 
 @layer theme { a.add-card { text-decoration: none; } }
@@ -1997,6 +2005,7 @@
 .card-route-page .perma-background { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; opacity: .2; filter: brightness(1.2) contrast(.8); pointer-events: none; z-index: -1; }
 .card-route-page .perma-tag-button { padding: 5px; }
 .card-route-page .perma-tag-button .fizzy-icon { width: 18px; height: 18px; }
+.card-route-page .perma-edit lexxy-editor { --lexxy-toolbar-height: calc(var(--lexxy-toolbar-button-size) + 16px); }
 .card-route-page .perma-edit lexxy-toolbar { border-top: 1px solid var(--line-strong); padding-top: 7px; }
 .card-route-page .card-picker { position: fixed; inset: auto; margin: 0; width: min(25ch, calc(100vw - 24px)); max-width: calc(100vw - 24px); box-sizing: border-box; padding: 20px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 8px 10px #0002; font: 400 16px/1.4 var(--font-body); overflow-y: auto; }
 .card-picker-heading { display: flex; align-items: start; justify-content: space-between; gap: 10px; margin: 0 0 12px; }

@@ -31,18 +31,26 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
   }
   function open() {
     query = ''; opened = true; handle.update()
-    dialog?.showModal(); input?.focus(); void load()
+    dialog?.show(); input?.focus({ preventScroll: true }); void load()
+  }
+  function close(restoreFocus = true) {
+    dialog?.close()
+    if (restoreFocus) trigger?.focus({ preventScroll: true })
   }
   function links() { return [...(dialog?.querySelectorAll<HTMLAnchorElement>('[data-jump-link]') ?? [])].filter(el => el.getClientRects().length) }
   function move(event: Pick<KeyboardEvent, 'key' | 'preventDefault'>) {
-    if (event.key === 'Escape') { event.preventDefault(); dialog?.close(); return }
+    if (event.key === 'Escape') { event.preventDefault(); close(); return }
     if (!['ArrowDown', 'ArrowUp'].includes(event.key)) return
     event.preventDefault()
     let items = links(), index = items.indexOf(document.activeElement as HTMLAnchorElement)
     items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
   }
   handle.queueTask(() => {
+    document.addEventListener('pointerdown', event => {
+      if (dialog?.open && event.target instanceof Node && !dialog.contains(event.target) && !trigger?.contains(event.target)) close(false)
+    }, { signal: handle.signal })
     document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && dialog?.open && !event.defaultPrevented) { event.preventDefault(); close(); return }
       if (event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || isTyping(event)) return
       if (event.key.toLowerCase() === 'c') {
         event.preventDefault()
@@ -52,7 +60,7 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
       if (event.key.toLowerCase() === 'b') { event.preventDefault(); location.assign(routes.dashboard.boards.new.href()) }
       if (event.key.toLowerCase() === 'p') { event.preventDefault(); location.assign('/dashboard?view=pinned') }
       if (event.key.toLowerCase() === 'n') { event.preventDefault(); location.assign(routes.dashboard.notifications.href()) }
-      if (event.key.toLowerCase() === 'j') { event.preventDefault(); opened ? dialog?.close() : open() }
+      if (event.key.toLowerCase() === 'j') { event.preventDefault(); opened ? close() : open() }
     }, { signal: handle.signal })
   })
   return () => {
@@ -73,12 +81,11 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
     ].filter(item => matches(item.label))
     let hasResults = shortcuts.some(s => matches(s.label)) || boards.length || tags.length || matches(user.name) || settings.length || matches('Add a board') || matches('All boards') || matches('Sign out')
     return <>
-      <button class="jump-trigger" type="button" aria-label="Open navigation" aria-haspopup="dialog" aria-expanded={opened} aria-controls="jump-navigation" aria-keyshortcuts="j" mix={[ref(node => { trigger = node }), on('click', open)]}>
+      <button class="jump-trigger" type="button" aria-label="Open navigation" aria-haspopup="dialog" aria-expanded={opened} aria-controls="jump-navigation" aria-keyshortcuts="j" mix={[ref(node => { trigger = node }), on('click', () => { opened ? close() : open() })]}>
         <span class="logo-mark" aria-hidden="true"><span /><span /><span /></span><strong>Trellix</strong><kbd>J</kbd><ChevronDownIcon />
       </button>
       <dialog id="jump-navigation" class="jump-dialog" aria-label="Jump to a board, person, place, or tag" mix={[
-        ref(node => { dialog = node }), on('close', () => { opened = false; handle.update(); trigger?.focus() }),
-        on('click', event => { if (event.target !== dialog) return; let r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close() }),
+        ref(node => { dialog = node }), on('close', () => { opened = false; handle.update() }),
         on('keydown', move),
       ]}>
         <div class="jump-input-wrap">
@@ -90,7 +97,7 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
               if (event.key === 'Enter') { event.preventDefault(); let link = links()[0]; if (link) location.assign(link.href) }
             }),
           ]} />
-          <button class="jump-close icon-btn" type="button" aria-label="Close navigation" mix={on('click', () => dialog?.close())}><XIcon /></button>
+          <button class="jump-close icon-btn" type="button" aria-label="Close navigation" mix={on('click', () => close())}><XIcon /></button>
         </div>
         <nav aria-label="Primary navigation" class="jump-content">
           <div class="jump-shortcuts">{shortcuts.map((item, index) => matches(item.label) && <a href={item.href} data-rmx-document data-jump-link aria-current={item.current ? 'page' : undefined}><kbd>{index + 1}</kbd><item.icon /><strong>{item.label}</strong></a>)}</div>

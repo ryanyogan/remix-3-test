@@ -19,7 +19,7 @@ interface CardPageProps {
   user: { id: string; name: string }
   boards: NavigationData['boards']
   tags: string[]
-  board?: BoardData
+  board?: Pick<BoardData, 'id' | 'name' | 'columns'>
   detail?: CardDetailData
   initialColumn?: string
 }

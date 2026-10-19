@@ -27,9 +27,23 @@ export function listBoards(db: Database, userId: string): Promise<Board[]> {
   return db.findMany(boards, { where: { user_id: userId }, orderBy: ['created_at', 'asc'] })
 }
 
+// Card pages only need their board's columns, not every card and attachment on it.
+export async function loadBoardColumns(db: Database, boardId: string): Promise<BoardData['columns']> {
+  let [columns, colors] = await Promise.all([
+    db.findMany(boardColumns, { where: { board_id: boardId }, orderBy: ['position', 'asc'] }),
+    db.exec(sql`select c.column_id, c.color from column_colors c join board_columns bc on bc.id = c.column_id where bc.board_id = ${boardId}`),
+  ])
+  return columns.map(column => ({
+    id: column.id,
+    name: column.name,
+    color: String(colors.rows?.find(row => row.column_id === column.id)?.color ?? 'yellow') as ColumnColor,
+    position: Number(column.position),
+  }))
+}
+
 export async function loadBoardData(db: Database, board: Board): Promise<BoardData> {
-  let [columns, items, files, metadata, watch, colors] = await Promise.all([
-    db.findMany(boardColumns, { where: { board_id: board.id }, orderBy: ['position', 'asc'] }),
+  let [columns, items, files, metadata, watch] = await Promise.all([
+    loadBoardColumns(db, board.id),
     db.findMany(boardItems, { where: { board_id: board.id }, orderBy: ['position', 'asc'] }),
     db.findMany(boardItemFiles, { where: { board_id: board.id }, orderBy: ['created_at', 'asc'] }),
     db.exec(sql`select i.id, u.name as author, d.assignee_id,
@@ -43,7 +57,6 @@ export async function loadBoardData(db: Database, board: Board): Promise<BoardDa
       from board_items i join boards b on b.id = i.board_id join users u on u.id = b.user_id
       left join card_details d on d.item_id = i.id where i.board_id = ${board.id}`),
     db.exec(sql`select watching from board_watches where board_id = ${board.id}`),
-    db.exec(sql`select c.column_id, c.color from column_colors c join board_columns bc on bc.id = c.column_id where bc.board_id = ${board.id}`),
   ])
 
   let authors = new Map((metadata.rows ?? []).map(row => [String(row.id), { author: String(row.author), assigneeId: row.assignee_id ? String(row.assignee_id) : null, updatedAt: Number(row.updated_at) }]))
@@ -65,12 +78,7 @@ export async function loadBoardData(db: Database, board: Board): Promise<BoardDa
     name: board.name,
     color: board.color,
     watching: watch.rows?.[0]?.watching !== 0,
-    columns: columns.map((column) => ({
-      id: column.id,
-      name: column.name,
-      color: String(colors.rows?.find(row => row.column_id === column.id)?.color ?? 'yellow') as ColumnColor,
-      position: Number(column.position),
-    })),
+    columns,
     items: items.map((item) => ({
       id: item.id,
       columnId: item.column_id,

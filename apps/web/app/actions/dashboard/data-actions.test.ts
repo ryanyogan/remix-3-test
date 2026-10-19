@@ -84,6 +84,13 @@ for (let database of ['sqlite', 'd1'] as const) {
       assert.equal(card.column_id, columns[1].id)
       assert.equal(card.assignee_id, userId)
       assert.match(card.comments[0].body_html, /<em>comment<\/em>/)
+      // The initial document includes the card, saved discussion and editor shell before JS.
+      let page = await call(c.show.href(params))
+      assert.equal(page.status, 200)
+      let html = await page.text()
+      assert.match(html, /A <strong>description<\/strong>/)
+      assert.match(html, /A <em>comment<\/em>/)
+      assert.match(html, /<lexxy-editor[^>]*aria-label="Comment"/)
       let search = await (await call(routes.dashboard.search.href() + '?q=Direct&limit=1')).json()
       assert.equal(search.data[0].id, cardId)
       assert.equal(
