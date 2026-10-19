@@ -5,7 +5,7 @@ import { routes } from '../../routes.ts'
 import { createTestRouter, origin, signUp } from '../../../test/router.ts'
 
 function get(href: string, cookie?: string) {
-  return new Request(new URL(href, origin), { headers: cookie ? { Cookie: cookie } : undefined })
+  return new Request(new URL(href, origin), { headers: cookie ? { Origin: origin, Cookie: cookie } : undefined })
 }
 
 describe('dashboard', () => {
@@ -62,7 +62,7 @@ describe('dashboard', () => {
       new Request(new URL(routes.dashboard.boards.create.href(), origin), {
         method: 'POST',
         body,
-        headers: { Cookie: cookie },
+        headers: { Origin: origin, Cookie: cookie },
       }),
     )
 
@@ -91,7 +91,7 @@ describe('dashboard', () => {
     let logout = await router.fetch(
       new Request(new URL(routes.logout.href(), origin), {
         method: 'POST',
-        headers: { Cookie: cookie },
+        headers: { Origin: origin, Cookie: cookie },
       }),
     )
     assert.equal(logout.status, 303)

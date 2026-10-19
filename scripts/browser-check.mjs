@@ -45,6 +45,6 @@ await click('.card-route-back');await waitFor(`location.pathname==='/dashboard/b
 await click(`a.card-open[href$="/${cardId}"]`);await waitFor(`location.pathname==='/dashboard/cards/${boardId}/${cardId}'`)
 console.log(JSON.stringify({fullRoute:true,richCreation:true,persistence:true,steps:true,tags:true,pinning:true,richComments:true,completion:true,editing:true,mobileBounds:true,boardLink:true}))
 } finally {
-if(cardId&&boardId)console.log('cleanup',await evaluate(`fetch('/api/v1/boards/${boardId}/cards/${cardId}',{method:'DELETE'}).then(r=>r.status)`))
+if(cardId&&boardId)console.log('cleanup',await evaluate(`fetch('/dashboard/cards/${boardId}/${cardId}/delete',{method:'POST',headers:{Accept:'application/json'}}).then(r=>r.status)`))
 close()
 }

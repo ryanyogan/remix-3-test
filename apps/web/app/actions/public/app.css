@@ -1764,6 +1764,17 @@
   .home-action .icon { width: 21px; height: 21px; }
   .home-heading .new-board-trigger > .icon { width: 21px; height: 21px; }
   .activity-timeline { padding-top: 42px; }
+  .activity-loading { padding-block: 28px; color: var(--ink-3); }
+  .activity-loading > p { text-align: center; font-size: 14px; }
+  .activity-loading-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); }
+  .activity-loading-columns > div { min-height: 270px; padding: 28px 25px; }
+  .activity-loading-columns > div + div { border-left: 1px solid var(--line); }
+  .activity-loading-columns span { display: block; height: 18px; margin-bottom: 22px; border-radius: 4px; background: var(--surface-2); }
+  .activity-loading-columns span + span { height: 70px; }
+  @media (max-width: 639px) {
+    .activity-loading-columns { grid-template-columns: minmax(0, 1fr); }
+    .activity-loading-columns > div + div { display: none; }
+  }
   .activity-day { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); }
   .activity-day + .activity-day { border-top: 0; }
   .activity-column { padding: 28px 25px 36px; min-width: 0; min-height: 270px; }

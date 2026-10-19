@@ -11,7 +11,7 @@ try {
   await click('.new-board-form button[type="submit"]')
   await waitFor('location.pathname.startsWith("/dashboard/boards/") && !!document.querySelector(".add-card")')
   boardId = await evaluate('location.pathname.split("/").at(-1)')
-  await click('.add-card')
+  await click('.lane .add-card')
   await waitFor('!!document.querySelector("lexxy-editor [contenteditable]")')
   await type('[aria-label="Card title"]', 'Keep this card within reach')
   await key('Enter')
@@ -24,9 +24,9 @@ try {
   await waitFor('!!document.querySelector(".board") && document.readyState === "complete"'); await new Promise(r=>setTimeout(r,300))
   await click('[aria-label=\'Collapse column "To do"\']')
   await navigate(`${origin}/dashboard/boards/${boardId}`)
-  await waitFor('!!document.querySelector(".lane[data-collapsed]")')
+  await waitFor('!!document.querySelector(".lane[data-maybe][data-collapsed]")')
   await click('[aria-label=\'Expand column "To do"\']')
-  await waitFor('!document.querySelector(".lane[data-collapsed]")')
+  await waitFor('!document.querySelector(".lane[data-maybe][data-collapsed]")')
   if (await evaluate('document.querySelectorAll(".card").length') !== 1) throw Error('Column duplicated its card')
   await navigate(`${origin}/dashboard`)
   await click('.dashboard-dock a[href="/dashboard?view=pinned"]')
@@ -60,10 +60,10 @@ try {
   await click(`${tile} .project-delete`)
   await click('.confirm-dialog[open] .btn-danger')
   await waitFor(`!document.querySelector(${JSON.stringify(tile)})`)
-  if (await evaluate(`fetch('/api/v1/boards/${boardId}').then(r=>r.status)`) !== 404) throw Error('Board deletion did not persist')
+  if (await evaluate(`fetch('/dashboard/boards/${boardId}/data', {headers:{Accept:'application/json'}}).then(r=>r.status)`) !== 404) throw Error('Board deletion did not persist')
   boardId = undefined
   console.log(JSON.stringify({ createdBoard: true, pinnedCard: true, homeDeepLink: true, collapsePersisted: true, mobileBounds: true, cancelDeletion: true, confirmedDeletion: true }))
 } finally {
-  if (boardId) console.log('cleanup', await evaluate(`fetch('/api/v1/boards/${boardId}',{method:'DELETE'}).then(r=>r.status)`))
+  if (boardId) console.log('cleanup', await evaluate(`fetch('/dashboard/boards/${boardId}/delete',{method:'POST',headers:{Accept:'application/json'}}).then(r=>r.status)`))
   close()
 }

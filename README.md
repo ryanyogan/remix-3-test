@@ -4,13 +4,13 @@ A compact kanban app built with Remix 3, a Hono JSON API, two independently depl
 
 ## Workspace
 
-- `apps/web`: Remix rendering, browser UI, authentication pages, and static assets.
+- `apps/web`: Remix pages and actions, browser UI, session authentication, and static assets.
 - `apps/api`: Hono routes, authentication enforcement, API tests, and a separate Worker entrypoint.
 - `packages/data`: shared schema, domain operations, D1/R2 adapters, and migrations.
 - `packages/contracts`: browser-safe types and limits.
 - `packages/session`: signed-cookie contract shared by the independent services.
 
-The API has no import of the web app or its router, assets, or UI. Shared data utilities are used by both services. Both Workers bind the existing D1 database and R2 bucket. `SESSION_SECRET` must match on both Workers; changing it signs out existing browser sessions. Secrets are deployed through Cloudflare, never bundled into browser assets. For an initial deployment or rotation, use `pnpm cf:deploy --secrets-file /absolute/path/to/secrets.env` so both Workers receive the same signing secret in one release. Routine deployments retain their existing secrets.
+The API has no runtime import of the web app or its router, assets, or UI. Shared domain operations in `packages/data/src/operations.ts` enforce the same validation and atomic writes for both HTTP entry points; each entry point authenticates and scopes resources before invoking them. Database credentials and storage bindings stay on the server. Stored rich-text attachments retain canonical consumer URLs; the web renderer projects them to authenticated app download routes, so existing attachments need no migration. Both Workers bind the existing D1 database and R2 bucket. `SESSION_SECRET` must match on both Workers; changing it signs out existing browser sessions. Secrets are deployed through Cloudflare, never bundled into browser assets. For an initial deployment or rotation, use `pnpm cf:deploy --secrets-file /absolute/path/to/secrets.env` so both Workers receive the same signing secret in one release. Routine deployments retain their existing secrets.
 
 ## Workflows
 
@@ -27,7 +27,7 @@ This is a Fizzy-inspired personal workflow, not complete Fizzy parity. Shared-bo
 
 ## API
 
-Read `/api` for the API guide. `apps/api` is a standalone Hono service deployed as `trellix-api`. Cloudflare routes `trellix.yogan.dev/api/v1*` directly to that Worker; requests do not enter the Remix Worker. API clients can also use `https://api.trellix.yogan.dev/api/v1`. Hono independently verifies signed, expiring browser sessions or bearer tokens. Browser writes require a matching Origin header. The Remix service in `apps/web` serves pages and progressive-enhancement form actions; interactive board mutations use Hono.
+Read `/api` for the API guide. `apps/api` is a standalone Hono service deployed as `trellix-api`. Cloudflare routes `trellix.yogan.dev/api/v1*` directly to that Worker; requests do not enter the Remix Worker. API clients can also use `https://api.trellix.yogan.dev/api/v1`. Hono independently verifies signed, expiring browser sessions or bearer tokens. Browser writes require a matching Origin header. The API serves consumers and the CLI. The app uses Remix routes/actions that call shared database operations directly; browser interactions, uploads, downloads, search, and token management never call Hono. Native forms handle board creation, and interactive controls retain optimistic state and JSON responses from their owning Remix routes.
 
 ```sh
 curl https://trellix.yogan.dev/api/v1/boards \
@@ -38,6 +38,7 @@ Boards, columns, cards, checklists, comments, search, and attachments are availa
 
 ## Performance choices
 
+- Home streams the shell before navigation and activity queries complete. Activity arrives one reader-local day at a time; older days load within 300px of the viewport, with a normal pagination link and retry on failure. Busy days continue in bounded pages of 100 events. Board/person filters update the home frame without a document reload; date grouping respects timezone and daylight saving.
 - Server-rendered initial board; optimistic mutations refresh JSON rather than re-rendering a whole document.
 - Descriptions, steps, and comments are fetched when opening a card. Board payloads contain summaries.
 - Local board filtering makes no network requests; global search debounces and cancels superseded requests.
@@ -84,7 +85,7 @@ The implementation follows the installed Remix documentation, [Hono's Cloudflare
 The activity and navigation redesign references [Fizzy’s jump menu](https://github.com/basecamp/fizzy/blob/main/app/views/my/menus/_jump.html.erb) and [event styles](https://github.com/basecamp/fizzy/blob/main/app/assets/stylesheets/events.css). Fizzy uses [Lexxy](https://github.com/basecamp/lexxy), built on Lexical, for rich text. The full-page card route now uses Lexxy 1.0.1 for descriptions and comments. `apps/web/scripts/build-editor.mjs` compiles Lexxy and its CommonJS syntax highlighters to browser ESM before development, tests, and Cloudflare builds. Vendored editor CSS and its MIT license live in `apps/web/app/actions/public/lexxy/`.
 
 Card-page scope: creating/editing titles and rich descriptions, formatted comments, steps,
-tags, self-assignment, cover-image upload/removal, pinning, and board/column changes are functional. New-card tags, steps, and assignment save with the card. Create card returns to the board; Create and add another opens a fresh card on the same board. Cover-image selection previews locally and uploads on creation; unsaved drafts are not persisted across reloads. Inline editor images/files upload immediately through the private API and the existing R2 adapter; toolbar selection, pasted files, and drag-and-drop share the same upload path. Saves wait for uploads; failures offer retry/removal. Golden tickets, watching/subscriber notifications, and reactions remain unavailable. The right-hand status list uses the actual
+tags, self-assignment, cover-image upload/removal, pinning, and board/column changes are functional. New-card tags, steps, and assignment save with the card. Create card returns to the board; Create and add another opens a fresh card on the same board. Cover-image selection previews locally and uploads on creation; unsaved drafts are not persisted across reloads. Inline editor images/files upload immediately through session-authenticated Remix actions and the existing R2 adapter; toolbar selection, pasted files, and drag-and-drop share the same upload path. Saves wait for uploads; failures offer retry/removal. Golden tickets, watching/subscriber notifications, and reactions remain unavailable. The right-hand status list uses the actual
 board columns; the six-character card reference comes from its existing UUID. Automatic
 "Not Now" aging is not implemented, so the UI does not promise a scheduled move.
 
@@ -93,3 +94,7 @@ Card creation references [Fizzy’s draft container](https://github.com/basecamp
 Editor uploads add migration `0010_editor_uploads`; apply it before deploying both Workers. Pending objects belong to the uploading user and are claimed atomically with card/comment writes into the existing attachment table. Discarded editor uploads are removed; abandoned uploads expire after 24 hours and their objects are reclaimed on that user’s next upload. Downloads remain authenticated. Images use recognized PNG/JPEG/GIF/WebP bytes; other formats download as attachments. Limits remain 10 MB per file and 10 files per card. No public R2 bucket or browser credentials are needed. The integration follows the installed Lexxy pending-attachment API and [Cloudflare’s R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/).
 
 `QA_ORIGIN=http://localhost:44100 node scripts/editor-upload-browser-check.mjs` verifies image/file toolbar uploads, persistence, downloads, comments, offline failures, retry, and cleanup using Chromium CDP. It creates and removes its own board and files. API coverage also exercises the production R2 storage adapter with a test binding; no production upload or deployment is performed by these checks.
+
+Set `QA_BLOCK_API=1` when running browser checks to block `/api/v1` in Chromium and fail on any attempted app request. Fixture setup uses separate Node consumer calls. For example: `QA_ORIGIN=http://localhost:44100 QA_BLOCK_API=1 node scripts/editor-upload-browser-check.mjs`.
+
+`QA_ORIGIN=http://localhost:44100 QA_BLOCK_API=1 node scripts/app-actions-browser-check.mjs` checks lazy navigation, search, board renaming, and token creation/revocation while the browser cannot reach the consumer API. It removes its temporary board and token.

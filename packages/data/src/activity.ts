@@ -62,3 +62,17 @@ export async function loadActivity(db: Database, userId: string, filters: Activi
   let last = events.at(-1)
   return { events, next: rows.length > 100 && last ? { before: last.at, beforeId: last.id } : null }
 }
+
+// Keep one reader-local day in each streamed region. The underlying query remains
+// bounded at 101 rows, including on busy days; its stable cursor continues those days.
+export async function loadActivityDay(db: Database, userId: string, filters: ActivityFilters, timeZone: string): Promise<ActivityPage> {
+  let page = await loadActivity(db, userId, filters)
+  let format = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+  let first = page.events[0]
+  if (!first) return page
+  let date = format.format(first.at)
+  let end = page.events.findIndex(event => format.format(event.at) !== date)
+  if (end < 0) return page
+  let events = page.events.slice(0, end), last = events.at(-1)!
+  return { events, next: { before: last.at, beforeId: last.id } }
+}

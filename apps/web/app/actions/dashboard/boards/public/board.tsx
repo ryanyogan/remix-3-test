@@ -23,7 +23,7 @@ import {
   type FileData,
   type ItemData,
 } from './board-model.ts'
-import { apiRequest } from './api-client.ts'
+import { appRequest } from '../../public/app-request.ts'
 import { glide, leave } from './motion.ts'
 import { BoardFilters, ColumnMenu, defaultFilters, matchesFilters } from './board-controls.tsx'
 
@@ -42,7 +42,7 @@ export const Board = clientEntry(
     let store = new BoardStore(handle.props.board.id, async () => {
       let version = ++refreshVersion
       try {
-        let board = await apiRequest<BoardData>(`/boards/${handle.props.board.id}`)
+        let board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: handle.props.board.id }))
         if (version !== refreshVersion || handle.signal.aborted) return
         refreshed = board
         store.reloaded()
@@ -156,7 +156,7 @@ export const Board = clientEntry(
       },
       move(card, columnId, position) {
         if (columnId === `not-now-${handle.props.board.id}` && !(refreshed ?? handle.props.board).columns.some(c => c.id === columnId)) {
-          notNowCreation ??= apiRequest<{ id: string }>(`/boards/${handle.props.board.id}/columns`, 'POST', { name: 'Not Now' }).then(result => result.id)
+          notNowCreation ??= appRequest<{ id: string }>(routes.dashboard.boards.upsertColumn.href({ boardId: handle.props.board.id }), 'POST', { name: 'Not Now' }).then(result => result.id)
           void notNowCreation.then(id => {
             store.submit({ type: 'upsertColumn', id, name: 'Not Now' })
             store.submit({ ...card, type: 'upsertItem', columnId: id, position })
@@ -196,7 +196,7 @@ export const Board = clientEntry(
         <div class="board-watchers">{watching ? <span class="board-avatar" title={handle.props.user.name}>{initials(handle.props.user.name)}</span> : <span class="watching-empty">Get new cards in your notifications</span>}</div>
         <button type="button" class="board-watch-toggle" aria-pressed={watching} disabled={watchPending} mix={on('click', async () => {
           watchPending = true; handle.update()
-          try { await apiRequest(`/boards/${board.id}/watch`, 'PUT', { watching: !watching }); watching = !watching }
+          try { await appRequest(routes.dashboard.boards.watch.href({ boardId: board.id }), 'POST', { watching: !watching }); watching = !watching }
           catch (error) { store.reject(error instanceof Error ? error.message : 'Could not update watching') }
           finally { watchPending = false; handle.update() }
         })}><BoardGlyph name={watching ? 'bell-off' : 'bell'} />{watching ? 'Stop watching' : 'Start watching'}</button>

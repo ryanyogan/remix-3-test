@@ -1,3 +1,4 @@
+import { routes } from '../../../../routes.ts'
 import { TypedEventTarget } from 'remix/component'
 
 
@@ -128,21 +129,21 @@ export function appendPosition(items: ItemData[]): number {
 }
 
 export function mutationRequest(boardId: string, mutation: Mutation): { href: string; init: RequestInit } {
-  let base = `/api/v1/boards/${encodeURIComponent(boardId)}`
-  function json(path: string, method: string, body?: unknown) {
-    return { href: base + path, init: { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) } }
+  function json(href: string, body?: unknown) {
+    return { href, init: { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) } }
   }
+  let board = routes.dashboard.boards, card = routes.dashboard.cards
   switch (mutation.type) {
-    case 'renameBoard': return json('', 'PATCH', { name: mutation.name })
-    case 'upsertColumn': return json('/columns', 'POST', { id: mutation.id, name: mutation.name, color: mutation.color })
-    case 'moveColumn': return json(`/columns/${mutation.id}/position`, 'POST', { direction: mutation.direction })
-    case 'deleteColumn': return json(`/columns/${mutation.id}`, 'DELETE')
-    case 'upsertItem': return json('/cards', 'POST', { id: mutation.id, title: mutation.title, columnId: mutation.columnId, position: mutation.position })
-    case 'deleteItem': return json(`/cards/${mutation.id}`, 'DELETE')
-    case 'deleteFile': return json(`/files/${mutation.id}`, 'DELETE')
+    case 'renameBoard': return json(board.rename.href({ boardId }), { name: mutation.name })
+    case 'upsertColumn': return json(board.upsertColumn.href({ boardId }), { id: mutation.id, name: mutation.name, color: mutation.color })
+    case 'moveColumn': return json(board.moveColumn.href({ boardId, columnId: mutation.id }), { direction: mutation.direction })
+    case 'deleteColumn': return json(board.deleteColumn.href({ boardId, columnId: mutation.id }))
+    case 'upsertItem': return json(board.upsertItem.href({ boardId }), { id: mutation.id, title: mutation.title, columnId: mutation.columnId, position: mutation.position })
+    case 'deleteItem': return json(board.deleteItem.href({ boardId, itemId: mutation.id }))
+    case 'deleteFile': return json(board.deleteFile.href({ boardId, fileId: mutation.id }))
     case 'uploadFile': {
       let body = new FormData(); body.set('id', mutation.id); body.set('file', mutation.file)
-      return { href: base + `/cards/${mutation.itemId}/files`, init: { method: 'POST', body } }
+      return { href: card.uploadFile.href({ boardId, cardId: mutation.itemId }), init: { method: 'POST', body, headers: { Accept: 'application/json' } } }
     }
   }
 }

@@ -6,7 +6,7 @@ if(!origin){close();throw Error('Set QA_ORIGIN; Chromium must be signed into a t
 const ready=()=>new Promise(r=>setTimeout(r,300))
 const editor=async()=>{await waitFor('!!document.querySelector("lexxy-editor [contenteditable]") && !document.querySelector(".perma-primary").disabled');await ready()}
 async function check(expression,message){if(!await evaluate(expression))throw Error(message)}
-async function api(path,method='GET',body){return evaluate(`fetch('/api/v1'+${JSON.stringify(path)},{method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},body:${body===undefined?'undefined':JSON.stringify(JSON.stringify(body))}}).then(async r=>{if(!r.ok)throw Error(await r.text());return r.status===204?null:(await r.json()).data})`)}
+import { consumerRequest as api } from './browser-cdp.mjs'
 async function selectAll(){await send('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2})}
 // Small real PNG for file-input verification (CDP supplies the selected local file).
 let file='/tmp/trellix-creation-cover.png'

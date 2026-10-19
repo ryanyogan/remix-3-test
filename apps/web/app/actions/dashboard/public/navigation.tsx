@@ -4,7 +4,7 @@ import { routes } from '../../../routes.ts'
 import type { Theme } from '../../../ui/theme.ts'
 import { ThemeToggle } from '../../../ui/public/theme-toggle.tsx'
 import { BoardIcon, ChevronDownIcon, LogOutIcon, PinIcon, PlusIcon, UserIcon, XIcon } from '../../../ui/public/icons.tsx'
-import { apiRequest } from '../boards/public/api-client.ts'
+import { appRequest } from './app-request.ts'
 
 function HomeIcon() {
   return () => <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-8 9 8v11h-6v-7H9v7H3Z" /></svg>
@@ -25,7 +25,7 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
   async function load() {
     if (data || loading) return
     loading = true; error = ''; handle.update()
-    try { data = await apiRequest<NavigationData>('/navigation', 'GET', undefined, handle.signal) }
+    try { data = await appRequest<NavigationData>(routes.dashboard.navigation.href(), 'GET', undefined, handle.signal) }
     catch (e) { if (!handle.signal.aborted) error = e instanceof Error ? e.message : 'Could not load navigation.' }
     finally { loading = false; if (!handle.signal.aborted) handle.update() }
   }

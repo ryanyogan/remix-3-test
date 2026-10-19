@@ -5,7 +5,7 @@ const origin=process.env.QA_ORIGIN
 if(!origin){close();throw Error('Set QA_ORIGIN; use a signed-in Chromium test account.')}
 const ready=()=>new Promise(r=>setTimeout(r,300))
 async function check(expression,message){if(!await evaluate(expression))throw Error(message)}
-async function api(path,method='GET',body){return evaluate(`fetch('/api/v1'+${JSON.stringify(path)},{method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},body:${body===undefined?'undefined':JSON.stringify(JSON.stringify(body))}}).then(async r=>{if(!r.ok)throw Error(await r.text());return r.status===204?null:(await r.json()).data})`)}
+import { consumerRequest as api } from './browser-cdp.mjs'
 async function selectFiles(selector,files){await click(selector);let {root}=await send('DOM.getDocument');let {nodeId}=await send('DOM.querySelector',{nodeId:root.nodeId,selector:'lexxy-editor input[type=file]'});if(!nodeId)throw Error('File chooser missing');await send('DOM.setFileInputFiles',{nodeId,files})}
 const file='/tmp/trellix-inline-notes.txt'
 await writeFile(file,'A downloadable attachment from the card editor.')
@@ -37,7 +37,7 @@ await click('.card-open');await waitFor('!!document.querySelector(".perma-commen
 await check('document.querySelector(".perma-description img")?.naturalWidth>0','Saved image did not load')
 await check('document.querySelector(".perma-description").textContent.includes("trellix-inline-notes.txt")','Saved file link missing')
 let fileId=detail.files.find(f=>f.name==='trellix-inline-notes.txt').id
-await check(`fetch('/api/v1/files/${fileId}').then(async r=>r.ok && (await r.text()).includes('downloadable attachment'))`,'Download bytes changed')
+await check(`fetch('/dashboard/uploads/${fileId}').then(async r=>r.ok && (await r.text()).includes('downloadable attachment'))`,'Download bytes changed')
 await click('#card-detail-heading button');await waitFor('!!document.querySelector("#card-title") && !document.querySelector(".perma-primary").disabled');await ready()
 await check('document.querySelector(".perma-edit lexxy-editor").value.includes("action-text-attachment") && document.querySelector(".perma-edit lexxy-editor figure img")?.naturalWidth>0','Editing lost attachments')
 await click('.perma-actions button[type=submit]');await waitFor('!!document.querySelector("#card-detail-heading")')
@@ -55,7 +55,7 @@ await selectFiles('lexxy-toolbar [data-command="uploadFile"]',[file]);await wait
 await send('Network.emulateNetworkConditions',{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1})
 await click('.editor-upload-error button');await waitFor('!document.querySelector(".editor-upload-error") && !document.querySelector(".perma-primary").disabled && document.querySelector("lexxy-editor").value.includes("trellix-inline-notes.txt")')
 let abandoned=await evaluate('new DOMParser().parseFromString(document.querySelector("lexxy-editor").value,"text/html").querySelector("action-text-attachment").getAttribute("sgid")')
-await click('.card-route-back');await waitFor(`location.pathname==='/dashboard/boards/${boardId}'`);await waitFor(`fetch('/api/v1/files/${abandoned}').then(r=>r.status===404)`)
+await click('.card-route-back');await waitFor(`location.pathname==='/dashboard/boards/${boardId}'`);await waitFor(`fetch('/dashboard/uploads/${abandoned}').then(r=>r.status===404)`)
 console.log(JSON.stringify({imageToolbar:true,fileToolbar:true,dragAndDrop:true,removeAttachment:true,privatePreview:true,createWithUploads:true,download:true,editAndReload:true,commentAttachment:true,failureBlocking:true,retry:true,discardCleanup:true}))
 }catch(error){console.error(await evaluate('document.body.innerText.slice(-1800)'));throw error}
 finally{

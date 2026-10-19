@@ -73,11 +73,11 @@ export function ActivityFilter(handle: Handle<ActivityFilterProps>) {
           on('keydown', event => {
             if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); void move(event.key === 'ArrowDown' ? 1 : -1) }
-            if (event.key === 'Enter' && matches[active < 0 ? 0 : active]) { event.preventDefault(); onSelect(matches[active < 0 ? 0 : active].value) }
+            if (event.key === 'Enter' && matches[active < 0 ? 0 : active]) { event.preventDefault(); close(true); onSelect(matches[active < 0 ? 0 : active].value) }
           }),
         ]} />
         <div class="activity-filter-options" id={`${id}-options`} role="listbox" aria-label={name === 'board' ? 'Boards' : 'People'}>
-          {matches.map((option, index) => <button key={option.value} type="button" role="option" id={`${id}-option-${index}`} tabIndex={-1} aria-selected={option.value === value} data-active={index === active ? '' : undefined} mix={on('click', () => onSelect(option.value))}>{option.label}</button>)}
+          {matches.map((option, index) => <button key={option.value} type="button" role="option" id={`${id}-option-${index}`} tabIndex={-1} aria-selected={option.value === value} data-active={index === active ? '' : undefined} mix={on('click', () => { close(true); onSelect(option.value) })}>{option.label}</button>)}
         </div>
         {!matches.length && <p class="activity-filter-empty" role="status">{query ? `No ${name === 'board' ? 'boards' : 'people'} found.` : `No ${name === 'board' ? 'boards' : 'people'} yet.`}</p>}
       </div>

@@ -24,6 +24,9 @@ import { loadDatabase } from './middleware/database.ts'
 import { parseFormData } from './middleware/form-data.ts'
 import { loadUploads } from './middleware/uploads.ts'
 import { routes } from './routes.ts'
+import { sameOrigin } from './middleware/same-origin.ts'
+import tokensController from './actions/dashboard/tokens/controller.ts'
+import uploadsController from './actions/dashboard/uploads/controller.ts'
 
 export interface AppRouterOptions {
   db?: Database
@@ -44,6 +47,7 @@ export function createAppRouter(options: AppRouterOptions = {}) {
       loadDatabase(db),
       loadUploads(uploads),
       session(sessionCookie, sessionStorage),
+      sameOrigin(),
       parseFormData(),
       auth({
         schemes: [
@@ -73,6 +77,8 @@ export function createAppRouter(options: AppRouterOptions = {}) {
   router.map(routes.dashboard, dashboardController)
   router.map(routes.dashboard.boards, boardsController)
   router.map(routes.dashboard.cards, cardsController)
+  router.map(routes.dashboard.tokens, tokensController)
+  router.map(routes.dashboard.uploads, uploadsController)
 
   return router
 }

@@ -1,3 +1,7 @@
+import * as operations from '@trellix/data/operations'
+import { listBoards } from '@trellix/data/boards'
+import { boardServices } from '@trellix/data/operation-context'
+import { dataResponse, input } from '../data-response.ts'
 import { loadWorkspace } from '@trellix/data/workspace'
 import * as s from 'remix/data-schema'
 import type { Issue } from 'remix/data-schema'
@@ -21,7 +25,13 @@ import {
   upsertColumn,
   upsertItem,
 } from './data.ts'
-import { BoardPage, BoardsPage, NewBoardPage, BoardSettingsPage, BoardWebhooksPage } from './pages.tsx'
+import {
+  BoardPage,
+  BoardsPage,
+  NewBoardPage,
+  BoardSettingsPage,
+  BoardWebhooksPage,
+} from './pages.tsx'
 import {
   newBoardForm,
   renameBoardForm,
@@ -71,8 +81,30 @@ const inlineTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp
 export default createController(routes.dashboard.boards, {
   middleware: [requireUser()],
   actions: {
+    options: (context) =>
+      dataResponse(context, (services) => listBoards(services.db, services.user.id)),
+    data: (context) =>
+      dataResponse(context, async (services) =>
+        loadBoardData(services.db, (await boardServices(services, context.params.boardId)).board),
+      ),
+    watch: (context) =>
+      dataResponse(context, async (services) =>
+        operations.watchBoard(
+          await boardServices(services, context.params.boardId),
+          await input(context.request),
+        ),
+      ),
+    moveColumn: (context) =>
+      dataResponse(context, async (services) =>
+        operations.reorderBoardColumn(
+          await boardServices(services, context.params.boardId),
+          context.params,
+          await input(context.request),
+        ),
+      ),
     async index(context) {
-      if (new URL(context.request.url).searchParams.has('new')) return redirect(routes.dashboard.boards.new.href())
+      if (new URL(context.request.url).searchParams.has('new'))
+        return redirect(routes.dashboard.boards.new.href())
       let user = context.auth.identity
       let { boards: userBoards } = await loadWorkspace(context.db, user.id)
       return context.render(
@@ -81,7 +113,9 @@ export default createController(routes.dashboard.boards, {
     },
 
     async new(context) {
-      return context.render(<NewBoardPage user={context.auth.identity} theme={await readTheme(context.request)} />)
+      return context.render(
+        <NewBoardPage user={context.auth.identity} theme={await readTheme(context.request)} />,
+      )
     },
 
     async create(context) {
@@ -90,9 +124,12 @@ export default createController(routes.dashboard.boards, {
       if (!parsed.success) {
         let name = context.formData.get('name')
         return context.render(
-          <NewBoardPage user={user} theme={await readTheme(context.request)}
+          <NewBoardPage
+            user={user}
+            theme={await readTheme(context.request)}
             name={typeof name === 'string' ? name : ''}
-            error={parsed.issues[0]?.message ?? 'Enter a board name'} />,
+            error={parsed.issues[0]?.message ?? 'Enter a board name'}
+          />,
           { status: 400 },
         )
       }
@@ -103,7 +140,10 @@ export default createController(routes.dashboard.boards, {
 
     async show(context) {
       let cardId = new URL(context.request.url).searchParams.get('card')
-      if (cardId) return redirect(routes.dashboard.cards.show.href({ boardId: context.params.boardId, cardId }))
+      if (cardId)
+        return redirect(
+          routes.dashboard.cards.show.href({ boardId: context.params.boardId, cardId }),
+        )
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (board === null) return notFound()
 
@@ -120,16 +160,35 @@ export default createController(routes.dashboard.boards, {
     async edit(context) {
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (!board) return notFound()
-      return context.render(<BoardSettingsPage user={context.auth.identity} theme={await readTheme(context.request)} board={board} />)
+      return context.render(
+        <BoardSettingsPage
+          user={context.auth.identity}
+          theme={await readTheme(context.request)}
+          board={board}
+        />,
+      )
     },
 
     async webhooks(context) {
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (!board) return notFound()
-      return context.render(<BoardWebhooksPage user={context.auth.identity} theme={await readTheme(context.request)} board={board} />)
+      return context.render(
+        <BoardWebhooksPage
+          user={context.auth.identity}
+          theme={await readTheme(context.request)}
+          board={board}
+        />,
+      )
     },
 
     async rename(context) {
+      if (context.request.headers.get('Content-Type')?.startsWith('application/json'))
+        return dataResponse(context, async (services) =>
+          operations.renameBoard(
+            await boardServices(services, context.params.boardId),
+            await input(context.request),
+          ),
+        )
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (board === null) return notFound()
 
@@ -143,6 +202,10 @@ export default createController(routes.dashboard.boards, {
     },
 
     async destroy(context) {
+      if (wantsJson(context.request))
+        return dataResponse(context, async (services) =>
+          operations.removeBoard(await boardServices(services, context.params.boardId)),
+        )
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (board === null) return notFound()
 
@@ -155,6 +218,13 @@ export default createController(routes.dashboard.boards, {
     },
 
     async upsertColumn(context) {
+      if (context.request.headers.get('Content-Type')?.startsWith('application/json'))
+        return dataResponse(context, async (services) =>
+          operations.createBoardColumn(
+            await boardServices(services, context.params.boardId),
+            await input(context.request),
+          ),
+        )
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (board === null) return notFound()
 
@@ -170,6 +240,13 @@ export default createController(routes.dashboard.boards, {
 
     // Deleting a column that is already gone succeeds, so a delete can race a pending create.
     async deleteColumn(context) {
+      if (wantsJson(context.request))
+        return dataResponse(context, async (services) =>
+          operations.removeBoardColumn(
+            await boardServices(services, context.params.boardId),
+            context.params,
+          ),
+        )
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (board === null) return notFound()
 
@@ -178,6 +255,13 @@ export default createController(routes.dashboard.boards, {
     },
 
     async upsertItem(context) {
+      if (context.request.headers.get('Content-Type')?.startsWith('application/json'))
+        return dataResponse(context, async (services) =>
+          operations.createBoardCard(
+            await boardServices(services, context.params.boardId),
+            await input(context.request),
+          ),
+        )
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
       if (board === null) return notFound()
 
@@ -246,8 +330,9 @@ export default createController(routes.dashboard.boards, {
       if (!row || !stored) return new Response('File not found', { status: 404 })
 
       let response = await createFileResponse(stored, context.request, {
-        cacheControl: 'private, max-age=3600',
+        cacheControl: 'private, no-store',
       })
+      response.headers.set('X-Content-Type-Options', 'nosniff')
       let disposition = inlineTypes.has(row.type) ? 'inline' : 'attachment'
       response.headers.set(
         'Content-Disposition',

@@ -22,6 +22,28 @@ export async function navigate(url){
   throw Error('Navigation timed out: '+url)
 }
 export async function screenshot(path){let r=await send('Page.captureScreenshot',{format:'png'});await writeFile(path,Buffer.from(r.data,'base64'))}
-export function close(){ws.close()}
+export function close(){ws.close();if(consumerAttempts.length)throw Error('App contacted the consumer API: '+consumerAttempts.join(', '))}
 
 export function subscribe(method,listener){let set=listeners.get(method)??new Set();set.add(listener);listeners.set(method,set);return ()=>set.delete(listener)}
+
+// Fixtures are consumer calls from Node. Browser traffic can independently block the public API.
+export async function consumerRequest(path, method = 'GET', body) {
+  let origin = process.env.QA_ORIGIN
+  if (!origin) throw Error('Set QA_ORIGIN')
+  let { cookies } = await send('Network.getCookies', { urls: [origin] })
+  let response = await fetch(origin + '/api/v1' + path, {
+    method, headers: { Origin: origin, Cookie: cookies.map(c => `${c.name}=${c.value}`).join('; '), 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!response.ok) throw Error(`${response.status}: ${await response.text()}`)
+  return response.status === 204 ? null : (await response.json()).data
+}
+
+let consumerAttempts = []
+if (process.env.QA_BLOCK_API === '1') {
+  await send('Network.enable')
+  await send('Network.setBlockedURLs', { urls: ['*/api/v1*'] })
+  subscribe('Network.requestWillBeSent', ({ request }) => {
+    if (new URL(request.url).pathname.startsWith('/api/v1')) consumerAttempts.push(request.url)
+  })
+}

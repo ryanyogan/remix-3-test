@@ -1,3 +1,4 @@
+import { routes } from '../../../../routes.ts'
 import { on, ref, type Handle } from "remix/component";
 import { limits } from "../../../../data/limits.ts";
 import {
@@ -5,7 +6,7 @@ import {
   XIcon,
   PaperclipIcon,
 } from "../../../../ui/public/icons.tsx";
-import { apiRequest } from "./api-client.ts";
+import { appRequest } from '../../public/app-request.ts';
 import type { ColumnData, ItemData } from "./board-model.ts";
 
 interface Detail {
@@ -47,26 +48,20 @@ export function CardDetail(
     loaded = false,
     copied = false;
   let dialog: HTMLDialogElement | undefined;
-  let base = `/boards/${handle.props.boardId}/cards/${handle.props.cardId}`;
+  let params = () => ({ boardId: handle.props.boardId, cardId: handle.props.cardId });
   async function load() {
     await handle.props.ready();
-    detail = await apiRequest<Detail>(base, "GET", undefined, handle.signal);
+    detail = await appRequest<Detail>(routes.dashboard.cards.data.href(params()), "GET", undefined, handle.signal);
     error = "";
     if (!handle.signal.aborted) handle.update();
   }
-  async function change(path: string, method: string, body?: unknown) {
+  async function change(href: string, body?: unknown) {
     if (busy) return false;
     busy = true;
     error = "";
     handle.update();
     try {
-      await apiRequest(
-        path.startsWith("/files/")
-          ? `/boards/${handle.props.boardId}${path}`
-          : base + path,
-        method,
-        body,
-      );
+      await appRequest(href, 'POST', body);
       await load();
       handle.props.onChange();
       return true;
@@ -252,7 +247,7 @@ export function CardDetail(
                   event.preventDefault();
                   let form = new FormData(event.currentTarget);
                   if (
-                    await change("", "PATCH", {
+                    await change(routes.dashboard.cards.update.href(params()), {
                       title: form.get("title"),
                       description: form.get("description"),
                     })
@@ -330,7 +325,7 @@ export function CardDetail(
                             checked={Boolean(step.completed)}
                             disabled={busy}
                             mix={on("change", (event) => {
-                              void change(`/steps/${step.id}`, "PATCH", {
+                              void change(routes.dashboard.cards.updateStep.href({ ...params(), stepId: step.id }), {
                                 completed: event.currentTarget.checked,
                               });
                             })}
@@ -345,7 +340,7 @@ export function CardDetail(
                           aria-label={`Delete step ${step.title}`}
                           disabled={busy}
                           mix={on("click", () => {
-                            void change(`/steps/${step.id}`, "DELETE");
+                            void change(routes.dashboard.cards.removeStep.href({ ...params(), stepId: step.id }));
                           })}
                         >
                           <XIcon />
@@ -359,7 +354,7 @@ export function CardDetail(
                       event.preventDefault();
                       let form = event.currentTarget;
                       if (
-                        await change("/steps", "POST", {
+                        await change(routes.dashboard.cards.addStep.href(params()), {
                           title: new FormData(form).get("title"),
                         })
                       )
@@ -392,7 +387,7 @@ export function CardDetail(
                     {(detail.files ?? []).map((file) => (
                       <li key={file.id}>
                         <a
-                          href={`/api/v1/boards/${handle.props.boardId}/files/${file.id}`}
+                          href={routes.dashboard.boards.file.href({ boardId: handle.props.boardId, fileId: file.id })}
                           download
                         >
                           <PaperclipIcon />
@@ -404,7 +399,7 @@ export function CardDetail(
                           aria-label={`Remove ${file.name}`}
                           disabled={busy}
                           mix={on("click", () => {
-                            void change(`/files/${file.id}`, "DELETE");
+                            void change(routes.dashboard.boards.deleteFile.href({ ...params(), fileId: file.id }));
                           })}
                         >
                           <XIcon />
@@ -433,8 +428,9 @@ export function CardDetail(
                         try {
                           let body = new FormData();
                           body.set("file", file);
-                          let response = await fetch(`/api/v1${base}/files`, {
+                          let response = await fetch(routes.dashboard.cards.uploadFile.href(params()), {
                             method: "POST",
+                            headers: { Accept: "application/json" },
                             body,
                           });
                           if (!response.ok)
@@ -480,9 +476,7 @@ export function CardDetail(
                               aria-label="Delete comment"
                               disabled={busy}
                               mix={on("click", () => {
-                                void change(
-                                  `/comments/${comment.id}`,
-                                  "DELETE",
+                                void change(routes.dashboard.cards.removeComment.href({ ...params(), commentId: comment.id }),
                                 );
                               })}
                             >
@@ -500,7 +494,7 @@ export function CardDetail(
                       event.preventDefault();
                       let form = event.currentTarget;
                       if (
-                        await change("/comments", "POST", {
+                        await change(routes.dashboard.cards.addComment.href(params()), {
                           body: new FormData(form).get("body"),
                         })
                       )
@@ -536,7 +530,7 @@ export function CardDetail(
                 type="button"
                 disabled={busy || handle.props.columns.length < 2}
                 mix={on("click", () => {
-                  void change("", "PATCH", {
+                  void change(routes.dashboard.cards.update.href(params()), {
                     columnId: done
                       ? (handle.props.columns.find(column => column.name.toLowerCase() !== 'not now') ?? handle.props.columns[0]).id
                       : doneColumn?.id,
@@ -553,7 +547,7 @@ export function CardDetail(
                   aria-label="Card column"
                   disabled={busy}
                   mix={on("change", (event) => {
-                    void change("", "PATCH", {
+                    void change(routes.dashboard.cards.update.href(params()), {
                       columnId: event.currentTarget.value,
                     });
                   })}
@@ -576,7 +570,7 @@ export function CardDetail(
                   aria-label="Card priority"
                   disabled={busy}
                   mix={on("change", (event) => {
-                    void change("", "PATCH", {
+                    void change(routes.dashboard.cards.update.href(params()), {
                       priority: event.currentTarget.value,
                     });
                   })}
@@ -599,7 +593,7 @@ export function CardDetail(
                       aria-label={`Remove tag ${tag}`}
                       disabled={busy}
                       mix={on("click", () => {
-                        void change("", "PATCH", {
+                        void change(routes.dashboard.cards.update.href(params()), {
                           tags: detail!.tags.filter((t) => t !== tag),
                         });
                       })}
@@ -618,7 +612,7 @@ export function CardDetail(
                       .replace(/^#/, "");
                     if (
                       tag &&
-                      (await change("", "PATCH", {
+                      (await change(routes.dashboard.cards.update.href(params()), {
                         tags: [...detail!.tags, tag],
                       }))
                     )
@@ -641,7 +635,7 @@ export function CardDetail(
                 aria-pressed={Boolean(detail.pinned)}
                 disabled={busy}
                 mix={on("click", () => {
-                  void change("", "PATCH", { pinned: !detail!.pinned });
+                  void change(routes.dashboard.cards.update.href(params()), { pinned: !detail!.pinned });
                 })}
               >
                 {detail.pinned ? "★ Pinned" : "☆ Pin card"}
@@ -655,7 +649,7 @@ export function CardDetail(
                   value={detail.snoozed_until ? date(detail.snoozed_until) : ""}
                   disabled={busy}
                   mix={on("change", (event) => {
-                    void change("", "PATCH", {
+                    void change(routes.dashboard.cards.update.href(params()), {
                       snoozedUntil: event.currentTarget.value
                         ? new Date(
                             event.currentTarget.value + "T00:00:00",

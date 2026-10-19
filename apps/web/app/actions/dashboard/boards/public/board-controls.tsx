@@ -1,6 +1,6 @@
 import { on, ref, type Handle, type RemixNode } from 'remix/component'
 import { columnColors, type ColumnColor, type BoardData, type ItemData } from '@trellix/contracts'
-import { apiRequest } from './api-client.ts'
+import { appRequest } from '../../public/app-request.ts'
 import { routes } from '../../../../routes.ts'
 
 export function Glyph(handle: Handle<{ name: string }>) {
@@ -95,7 +95,7 @@ export function BoardFilters(handle: Handle<{ board: BoardData; user: { id: stri
   function change(values: Partial<Filters>) { handle.props.onChange({ ...handle.props.filters, ...values }) }
   async function toggle() {
     expanded = !expanded; handle.update()
-    if (expanded) try { boards = await apiRequest('/boards'); error = ''; handle.update() } catch { error = 'Could not load boards'; handle.update() }
+    if (expanded) try { boards = await appRequest(routes.dashboard.boards.options.href()); error = ''; handle.update() } catch { error = 'Could not load boards'; handle.update() }
   }
   function choice(label: string, field: 'sort' | 'status' | 'assignee' | 'creator' | 'closer', options: [string, string][], defaultValue = '') {
     let value = handle.props.filters[field]

@@ -1,9 +1,9 @@
-import { ActivityHeading, ActivityTimeline } from './public/activity.tsx'
+import { ActivityHeading, ActivityFeed, ActivityLoading } from './public/activity.tsx'
 import { NewCardButton } from './public/new-card.tsx'
 import type { ActivityFilters, ActivityPage, NavigationData } from '@trellix/contracts'
 import { NewBoardButton } from './boards/public/new-board-form.tsx'
 import type { Handle, RemixNode } from 'remix/component'
-import { css } from 'remix/component'
+import { css, Frame } from 'remix/component'
 
 import type { User } from '../../data/tables.ts'
 import type { Theme } from '../../ui/theme.ts'
@@ -12,6 +12,7 @@ import { BoardProgressBars, CompletionDonut, CreatedChart, StatTiles } from './c
 import { ApiTokens } from './public/api-tokens.tsx'
 import { DashboardLayout } from './layout.tsx'
 import { routes } from '../../routes.ts'
+import { activityHref } from './public/activity-urls.ts'
 
 export function NotificationsPage(handle: Handle<{ user: User; theme?: Theme; activity: ActivityPage }>) {
   return () => <DashboardLayout user={handle.props.user} theme={handle.props.theme} title="Notifications" current="index" home>
@@ -24,17 +25,29 @@ export function NotificationsPage(handle: Handle<{ user: User; theme?: Theme; ac
   </DashboardLayout>
 }
 
-export function OverviewPage(handle: Handle<{ user: User; theme?: Theme; navigation: NavigationData; activity: ActivityPage; filters: ActivityFilters }>) {
+export function OverviewPage(handle: Handle<{ user: User; theme?: Theme; filters: ActivityFilters }>) {
   return () => {
-    let { user, theme, navigation, activity, filters } = handle.props
-    return <DashboardLayout user={user} theme={theme} current="index" title="Activity" home navigation={navigation} view={filters.view}>
+    let { user, theme, filters } = handle.props
+    return <DashboardLayout user={user} theme={theme} current="index" title="Activity" home view={filters.view}>
+      <Frame name="home-activity" src={activityHref(routes.dashboard.activity.href(), filters)} fallback={<>
+        <div class="home-heading"><NewCardButton boards={[]} /><div class="activity-heading"><h1>Activity</h1></div><NewBoardButton label="Add a board" /></div>
+        <ActivityLoading href={activityHref(routes.dashboard.index.href(), filters)} />
+      </>} />
+    </DashboardLayout>
+  }
+}
+
+export function ActivityContent(handle: Handle<{ user: User; navigation: NavigationData; filters: ActivityFilters; timeZone: string }>) {
+  return () => {
+    let { user, navigation, filters, timeZone } = handle.props
+    return <>
       <div class="home-heading">
         <NewCardButton boards={navigation.boards} />
         <ActivityHeading navigation={navigation} filters={filters} user={{ id: user.id, name: user.name }} />
         <NewBoardButton label="Add a board" />
       </div>
-      <ActivityTimeline activity={activity} userId={user.id} hasBoards={!!navigation.boards.length} filters={filters} now={Date.now()} />
-    </DashboardLayout>
+      <ActivityFeed key={activityHref('', filters)} filters={filters} timeZone={timeZone} hasBoards={!!navigation.boards.length} />
+    </>
   }
 }
 

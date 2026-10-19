@@ -1,7 +1,8 @@
+import { routes } from '../../../../routes.ts'
 import { clientEntry, on, ref, type Handle } from 'remix/component'
 import type { WorkspaceBoard } from '@trellix/contracts'
 import { ArrowRightIcon, TrashIcon } from '../../../../ui/public/icons.tsx'
-import { apiRequest } from './api-client.ts'
+import { appRequest } from '../../public/app-request.ts'
 
 export const BoardTile = clientEntry(import.meta.url, function BoardTile(handle: Handle<{ board: WorkspaceBoard; index: number; compact?: boolean }>) {
   let dialog: HTMLDialogElement | undefined
@@ -23,7 +24,7 @@ export const BoardTile = clientEntry(import.meta.url, function BoardTile(handle:
         {error && <p class="field-error" role="alert">{error}</p>}
         <div class="dialog-actions"><button type="button" class="btn btn-ghost" disabled={busy} autoFocus mix={on('click', () => dialog?.close())}>Keep board</button><button type="button" class="btn btn-danger" disabled={busy} mix={on('click', async () => {
           busy = true; error = ''; handle.update()
-          try { await apiRequest(`/boards/${board.id}`, 'DELETE'); dialog?.close(); removed = true; await handle.frame.reload() }
+          try { await appRequest(routes.dashboard.boards.destroy.href({ boardId: board.id }), 'POST'); dialog?.close(); removed = true; await handle.frame.reload() }
           catch (e) { error = e instanceof Error ? e.message : 'Could not delete this board.' }
           finally { busy = false; handle.update() }
         })}>{busy ? 'Deleting…' : 'Delete board'}</button></div>

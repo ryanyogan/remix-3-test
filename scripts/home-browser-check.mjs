@@ -56,8 +56,11 @@ try {
   await click(`.activity-card[href^="/dashboard/cards/${boardId}/"]`)
   await waitFor('!!document.querySelector("#card-detail-heading")')
   await home()
+  await evaluate('window.homeFilterHeader = document.querySelector(".dashboard-header"); window.homeFilterTimeOrigin = performance.timeOrigin')
   await click('[aria-label="Filter activity by board"]'); await waitFor('document.querySelector("#activity-board")?.matches(":popover-open") && document.activeElement?.matches("#activity-board input")'); await key('ArrowDown'); await waitFor('!!document.querySelector("#activity-board input")?.getAttribute("aria-activedescendant")'); await key('Enter'); await waitFor('!!new URL(location.href).searchParams.get("board")'); await ready()
   await check('!!new URL(location.href).searchParams.get("board")', 'Board filter did not navigate')
+  await check('window.homeFilterTimeOrigin === performance.timeOrigin && window.homeFilterHeader === document.querySelector(".dashboard-header")', 'Board filter replaced the document or header')
+  await check('!document.querySelector("#activity-board")?.matches(":popover-open")', 'Board picker stayed open after selection')
   await home()
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
   await check('document.documentElement.scrollWidth <= innerWidth', 'Mobile home overflows')
@@ -73,6 +76,6 @@ try {
   await waitFor('!document.querySelector(".jump-dialog[open]")')
   console.log(JSON.stringify({ jumpShortcut: true, searchAndNoResults: true, focusReturn: true, boardAndCardCreation: true, completionFeed: true, keyboardNavigation: true, lazyNavigation: true, pinnedShortcut: true, searchShortcut: true, cardDeepLink: true, boardFilter: true, mobileBounds: true, outsideDismissal: true }))
 } finally {
-  if (boardId) console.log('cleanup', await evaluate(`fetch('/api/v1/boards/${boardId}', {method:'DELETE'}).then(r=>r.status)`))
+  if (boardId) console.log('cleanup', await evaluate(`fetch('/dashboard/boards/${boardId}/delete', {method:'POST',headers:{Accept:'application/json'}}).then(r=>r.status)`))
   close()
 }

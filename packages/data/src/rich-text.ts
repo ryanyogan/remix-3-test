@@ -46,3 +46,21 @@ export function attachmentIds(html: string) {
   return [...new Set(attachmentNodes(html).map(node => node.attribs.sgid ?? ''))]
 }
 function escapeHtml(value: string) { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
+
+// Stored attachments use canonical consumer URLs. A renderer can select its own authenticated
+// download route without changing stored content or treating ordinary text as a URL.
+export function attachmentUrls(html: string, fileHref: (id: string) => string): string {
+  if (!html.includes('action-text-attachment')) return html
+  let doc = parseDocument(html)
+  for (let attachment of DomUtils.getElementsByTagName('action-text-attachment', doc.children)) {
+    let id = attachment.attribs.sgid
+    if (!/^[a-f0-9-]{36}$/i.test(id ?? '')) continue
+    let canonical = `/api/v1/files/${id}`
+    for (let node of [attachment, ...DomUtils.getElementsByTagName('*', attachment.children)]) {
+      for (let attribute of ['src', 'href', 'url']) {
+        if (node.attribs[attribute] === canonical) node.attribs[attribute] = fileHref(id)
+      }
+    }
+  }
+  return DomUtils.getOuterHTML(doc)
+}

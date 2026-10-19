@@ -1,4 +1,5 @@
 import { clientEntry, on, ref, type Handle } from 'remix/component'
+import { routes } from '../../../routes.ts'
 import { isTyping } from './navigation.tsx'
 import { XIcon, ArrowRightIcon } from '../../../ui/public/icons.tsx'
 
@@ -20,7 +21,7 @@ export const Search = clientEntry(import.meta.url, function Search(handle: Handl
     try {
       let params = new URLSearchParams({ q: term, limit: '20' })
       if (append && next) params.set('after', next)
-      let response = await fetch(`/api/v1/cards?${params}`, { signal: current.signal })
+      let response = await fetch(`${routes.dashboard.search.href()}?${params}`, { signal: current.signal, headers: { Accept: 'application/json' } })
       let body = await response.json()
       if (!response.ok) throw new Error(body.error ?? 'Could not search cards')
       if (current.signal.aborted) return

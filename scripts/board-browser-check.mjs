@@ -3,9 +3,7 @@ const origin = process.env.QA_ORIGIN
 if (!origin) { close(); throw Error('Set QA_ORIGIN; the Chromium test browser must be signed in.') }
 let boardId
 let returnUrl = await evaluate('location.href')
-async function request(path, method = 'GET', body) {
-  return evaluate(`fetch('/api/v1'+${JSON.stringify(path)}, {method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},body:${body === undefined ? 'undefined' : JSON.stringify(JSON.stringify(body))}}).then(async r=>{if(!r.ok)throw Error(r.status+': '+await r.text());return r.status===204?null:(await r.json()).data})`)
-}
+import { consumerRequest as request } from './browser-cdp.mjs'
 async function settle() { await new Promise(r => setTimeout(r, 350)) }
 async function drag(source, target) {
   const box = selector => evaluate(`(()=>{let r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+Math.min(48,r.height/2)}})()`)
@@ -82,7 +80,7 @@ try {
   // Native HTML drag with real pointer input, including a collapsed column target.
   let source = `.lane[data-maybe] .card:has(a[href$="/${cardId}"])`
   await drag(source, '.lane[data-not-now] .lane-expand')
-  await waitFor(`fetch('/api/v1/boards/${boardId}').then(r=>r.json()).then(({data:b})=>b.columns.find(c=>c.name==='Not Now')?.id===b.items.find(i=>i.id==='${cardId}')?.columnId)`)
+  await waitFor(`fetch('/dashboard/boards/${boardId}/data', {headers:{Accept:'application/json'}}).then(r=>r.json()).then(({data:b})=>b.columns.find(c=>c.name==='Not Now')?.id===b.items.find(i=>i.id==='${cardId}')?.columnId)`)
   await key('c', 'KeyC')
   await waitFor('!!document.querySelector("lexxy-editor [contenteditable]")'); await settle()
   await type('[aria-label="Card title"]', 'New cards still start in Maybe')

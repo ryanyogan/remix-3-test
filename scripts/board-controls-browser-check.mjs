@@ -3,9 +3,7 @@ const origin = process.env.QA_ORIGIN
 if (!origin) { close(); throw Error('Set QA_ORIGIN; Chromium must be signed in.') }
 const originalUrl = await evaluate('location.href')
 let boardId
-async function request(path, method = 'GET', body) {
-  return evaluate(`fetch('/api/v1'+${JSON.stringify(path)}, {method:${JSON.stringify(method)},headers:{'Content-Type':'application/json'},body:${body === undefined ? 'undefined' : JSON.stringify(JSON.stringify(body))}}).then(async r=>{if(!r.ok)throw Error(r.status+': '+await r.text());return r.status===204?null:(await r.json()).data})`)
-}
+import { consumerRequest as request } from './browser-cdp.mjs'
 const settle = () => new Promise(resolve => setTimeout(resolve, 400))
 async function choose(label, text) {
   await click(`.board-quick-filter > button[aria-label=${JSON.stringify(label)}]`)
@@ -59,7 +57,7 @@ try {
   await click(':popover-open input[aria-label="Violet"]')
   if (await evaluate('document.querySelector(":popover-open input[name=name]").value') !== 'Ready') throw Error('Color selection lost the draft name')
   await click(':popover-open .column-save'); await settle()
-  await waitFor(`fetch('/api/v1/boards/${boardId}').then(r=>r.json()).then(({data})=>data.columns.find(c=>c.id==='${yes}')?.color==='violet')`)
+  await waitFor(`fetch('/dashboard/boards/${boardId}/data', {headers:{Accept:'application/json'}}).then(r=>r.json()).then(({data})=>data.columns.find(c=>c.id==='${yes}')?.color==='violet')`)
   await navigate(url); await settle()
   if (!await evaluate(`document.querySelector('[data-column-id="${yes}"]').style.getPropertyValue('--lane-color').includes('violet')`)) throw Error('Column color did not persist')
   await click('[aria-label="Column options for Ready"]')

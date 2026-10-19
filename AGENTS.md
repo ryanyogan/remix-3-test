@@ -1,6 +1,6 @@
 # Trellix Agent Guide
 
-This pnpm workspace contains `apps/web` (Remix 3), `apps/api` (Hono), and shared packages. Keep the API independent of the web router and renderer. Paths in the Remix layout below are relative to `apps/web`.
+This pnpm workspace contains `apps/web` (Remix 3), `apps/api` (Hono), and shared packages. Keep the API independent of the web router and renderer. The API is for consumers and the CLI; the app must use Remix routes/actions and shared database operations directly, never use the consumer API for app data. The local server may forward consumer requests to the separate API process. Paths in the Remix layout below are relative to `apps/web`.
 
 ## Commands
 

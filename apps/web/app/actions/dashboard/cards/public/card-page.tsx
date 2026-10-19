@@ -3,7 +3,7 @@ import type { BoardData, CardDetailData, NavigationData } from '@trellix/contrac
 import { routes } from '../../../../routes.ts'
 import { limits } from '../../../../data/limits.ts'
 import { ArrowRightIcon, ChevronDownIcon, PinIcon, PlusIcon, XIcon, PaperclipIcon } from '../../../../ui/public/icons.tsx'
-import { apiRequest } from '../../boards/public/api-client.ts'
+import { appRequest } from '../../public/app-request.ts'
 import { isTyping } from '../../public/navigation.tsx'
 import { RichEditor, plainHtml } from './rich-editor.tsx'
 import { CardPicker } from './card-picker.tsx'
@@ -38,14 +38,14 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
   // Reuse this id after a failed upload/response so retries cannot duplicate a card.
   let creationId: string | undefined, created = false
   let editForm: HTMLFormElement | undefined, commentForm: HTMLFormElement | undefined
-  let base = () => `/boards/${board!.id}/cards/${detail!.id}`
+  let params = () => ({ boardId: board!.id, cardId: detail!.id })
   let back = () => board ? routes.dashboard.boards.show.href({ boardId: board.id }) : routes.dashboard.index.href()
-  async function change(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) {
+  async function change(href: string, body?: unknown) {
     if (busy || !detail) return false
     busy = true; error = ''; handle.update()
     try {
-      await apiRequest(base() + path, method, body)
-      detail = await apiRequest<CardDetailData>(base())
+      await appRequest(href, 'POST', body)
+      detail = await appRequest<CardDetailData>(routes.dashboard.cards.data.href(params()))
       return true
     } catch (e) { error = e instanceof Error ? e.message : 'Could not save that change.'; return false }
     finally { busy = false; handle.update() }
@@ -63,14 +63,14 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
   async function save(addAnother = false) {
     if (busy || !board || !editorReady || editorUploading) return
     if (detail) {
-      if (await change('', 'PATCH', { title: title.trim() || 'Untitled', descriptionHtml: description })) { editing = false; handle.update() }
+      if (await change(routes.dashboard.cards.update.href(params()), { title: title.trim() || 'Untitled', descriptionHtml: description })) { editing = false; handle.update() }
     } else {
       if (!board.columns.length) { error = 'Add a column to this board before creating a card.'; handle.update(); return }
       busy = true; error = ''; handle.update()
       try {
         creationId ??= crypto.randomUUID()
         let payload = { id: creationId, title: title.trim() || 'Untitled', columnId: board.columns.find(c => c.id === handle.props.initialColumn)?.id ?? (board.columns.find(column => column.name.toLowerCase() !== 'not now') ?? board.columns[0]).id, descriptionHtml: description, tags: draftTags, assigneeId, steps: draftSteps.map(step => ({ title: step.title, completed: !!step.completed })) }
-        await apiRequest(`/boards/${board.id}/cards`, 'POST', payload)
+        await appRequest(routes.dashboard.cards.create.href({ boardId: board.id }), 'POST', payload)
         created = true
         if (coverFile) await uploadCover(creationId, coverFile)
         location.assign(addAnother ? `${routes.dashboard.cards.new.href()}?board=${board.id}` : back())
@@ -79,7 +79,7 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
   }
   async function uploadCover(cardId: string, file: File) {
     let body = new FormData(); body.set('file', file)
-    let response = await fetch(`/api/v1/boards/${board!.id}/cards/${cardId}/cover`, { method: 'POST', body })
+    let response = await fetch(routes.dashboard.cards.setCover.href({ boardId: board!.id, cardId }), { method: 'POST', body, headers: { Accept: 'application/json' } })
     if (!response.ok) throw new Error((await response.json()).error ?? 'Could not upload the image.')
   }
   async function chooseCover(file?: File) {
@@ -91,13 +91,13 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     try {
       // Decode before showing it so corrupt images never become broken previews.
       let bitmap = await createImageBitmap(file); bitmap.close()
-      if (detail) { await uploadCover(detail.id, file); detail = await apiRequest<CardDetailData>(base()) }
+      if (detail) { await uploadCover(detail.id, file); detail = await appRequest<CardDetailData>(routes.dashboard.cards.data.href(params())) }
       else { if (coverPreview) URL.revokeObjectURL(coverPreview); coverFile = file; coverPreview = URL.createObjectURL(file) }
     } catch (e) { error = e instanceof Error ? e.message : 'Could not load the image.' }
     finally { busy = false; handle.update() }
   }
   async function removeCover() {
-    if (detail) await change('/cover', 'DELETE')
+    if (detail) await change(routes.dashboard.cards.removeCover.href(params()))
     else { if (coverPreview) URL.revokeObjectURL(coverPreview); coverPreview = ''; coverFile = undefined; handle.update() }
   }
   async function selectBoard(id: string) {
@@ -105,9 +105,9 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     busy = true; error = ''; handle.update()
     try {
       if (detail) {
-        await apiRequest(base(), 'PATCH', { boardId: id })
+        await appRequest(routes.dashboard.cards.update.href(params()), 'POST', { boardId: id })
         location.assign(routes.dashboard.cards.show.href({ boardId: id, cardId: detail.id }))
-      } else if (!created) board = await apiRequest<BoardData>(`/boards/${id}`)
+      } else if (!created) board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: id }))
     } catch (e) { error = e instanceof Error ? e.message : 'Could not change boards.' }
     finally { busy = false; handle.update() }
   }
@@ -116,12 +116,12 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     let current = detail?.tags ?? draftTags
     let next = current.includes(value) ? current.filter(t => t !== value) : [...current, value]
     if (!value || next.length > 12) { error = 'Use up to 12 tags.'; handle.update(); return }
-    if (detail) await change('', 'PATCH', { tags: next })
+    if (detail) await change(routes.dashboard.cards.update.href(params()), { tags: next })
     else { draftTags = next; handle.update() }
   }
   async function assign() {
     let next = (detail?.assignee_id ?? assigneeId) ? null : handle.props.user.id
-    if (detail) await change('', 'PATCH', { assigneeId: next })
+    if (detail) await change(routes.dashboard.cards.update.href(params()), { assigneeId: next })
     else { assigneeId = next; handle.update() }
   }
   function openPicker(id: string) { document.getElementById(id)?.showPopover() }
@@ -129,7 +129,7 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
   function toggleDone() {
     if (!detail || !board || board.columns.length < 2) return
     let last = board.columns.at(-1)!
-    void change('', 'PATCH', { columnId: detail.column_id === last.id ? (board.columns.find(column => column.name.toLowerCase() !== 'not now') ?? board.columns[0]).id : last.id })
+    void change(routes.dashboard.cards.update.href(params()), { columnId: detail.column_id === last.id ? (board.columns.find(column => column.name.toLowerCase() !== 'not now') ?? board.columns[0]).id : last.id })
   }
   handle.queueTask(() => document.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.isComposing || event.repeat || document.querySelector('dialog[open], :popover-open')) return
@@ -156,7 +156,7 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     let selectedTags = detail?.tags ?? draftTags
     let steps = detail?.steps ?? draftSteps
     let assigned = detail ? detail.assignee_id : assigneeId
-    let cover = detail?.cover_file_id ? `/api/v1${base()}/cover?v=${detail.cover_file_id}` : coverPreview
+    let cover = detail?.cover_file_id ? `${routes.dashboard.cards.cover.href(params())}?v=${detail.cover_file_id}` : coverPreview
     let done = detail && board && board.columns.length > 1 && detail.column_id === board.columns.at(-1)?.id
     return <>
       <a class="card-route-back" href={back()} data-rmx-document>Back to {board?.name ?? 'Home'}<kbd>ESC</kbd></a>
@@ -189,15 +189,15 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
                     {detail!.description_html ? <div class="lexxy-content perma-description" innerHTML={unsafeHTML(detail!.description_html)} /> : detail!.description ? <div class="perma-description plain-description">{detail!.description}</div> : null}
                   </div>}
                   <section class="perma-steps" aria-label="Steps">
-                    {steps.map(step => <div class="perma-step" key={step.id}><label><input type="checkbox" checked={!!step.completed} disabled={busy} mix={on('change', e => { if (detail) void change(`/steps/${step.id}`, 'PATCH', { completed: e.currentTarget.checked }); else { draftSteps = draftSteps.map(s => s.id === step.id ? { ...s, completed: e.currentTarget.checked ? 1 : 0 } : s); handle.update() } })}/><span class={step.completed ? 'step-complete' : ''}>{step.title}</span></label><button type="button" class="perma-remove-step" aria-label={`Delete step ${step.title}`} disabled={busy} mix={on('click', () => { if (detail) void change(`/steps/${step.id}`, 'DELETE'); else { draftSteps = draftSteps.filter(s => s.id !== step.id); handle.update() } })}><XIcon /></button></div>)}
+                    {steps.map(step => <div class="perma-step" key={step.id}><label><input type="checkbox" checked={!!step.completed} disabled={busy} mix={on('change', e => { if (detail) void change(routes.dashboard.cards.updateStep.href({ ...params(), stepId: step.id }), { completed: e.currentTarget.checked }); else { draftSteps = draftSteps.map(s => s.id === step.id ? { ...s, completed: e.currentTarget.checked ? 1 : 0 } : s); handle.update() } })}/><span class={step.completed ? 'step-complete' : ''}>{step.title}</span></label><button type="button" class="perma-remove-step" aria-label={`Delete step ${step.title}`} disabled={busy} mix={on('click', () => { if (detail) void change(routes.dashboard.cards.removeStep.href({ ...params(), stepId: step.id })); else { draftSteps = draftSteps.filter(s => s.id !== step.id); handle.update() } })}><XIcon /></button></div>)}
                     <form class="perma-step-form" mix={on('submit', async event => {
                       event.preventDefault(); let form = event.currentTarget; let title = String(new FormData(form).get('title')).trim(); if (!title) return
-                      if (detail) { if (await change('/steps', 'POST', { title })) form.reset() }
+                      if (detail) { if (await change(routes.dashboard.cards.addStep.href(params()), { title })) form.reset() }
                       else if (draftSteps.length < 200) { draftSteps = [...draftSteps, { id: crypto.randomUUID(), title, completed: 0 }]; form.reset(); handle.update() }
                     })}><span class="perma-step-box" aria-hidden="true"/><input name="title" aria-label="New step" placeholder="Add a step…" required maxLength={300} disabled={busy} /><button type="submit" aria-label="Add step" disabled={busy}><PlusIcon /></button></form>
                   </section>
                 </div>
-                {detail && <nav class="perma-stages" aria-label="Card status">{board.columns.map(column => <button key={column.id} type="button" class={detail!.column_id === column.id ? 'perma-stage current' : 'perma-stage'} aria-current={detail!.column_id === column.id ? 'step' : undefined} disabled={busy || editing} mix={on('click', () => { void change('', 'PATCH', { columnId: column.id }) })}>{column.name}</button>)}</nav>}
+                {detail && <nav class="perma-stages" aria-label="Card status">{board.columns.map(column => <button key={column.id} type="button" class={detail!.column_id === column.id ? 'perma-stage current' : 'perma-stage'} aria-current={detail!.column_id === column.id ? 'step' : undefined} disabled={busy || editing} mix={on('click', () => { void change(routes.dashboard.cards.update.href(params()), { columnId: column.id }) })}>{column.name}</button>)}</nav>}
               </div>
               <footer class="perma-meta">
                 <span class="perma-avatar" aria-hidden="true">{initials(detail?.author ?? user.name)}</span>
@@ -210,7 +210,7 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
           </div>
           {detail && <aside class="perma-tools perma-tools-right" aria-label="Card actions">
             <button class="perma-circle" type="button" disabled title="Comment notifications are not available yet" aria-label="Watch card (not available yet)"><BellIcon /></button>
-            <button class="perma-circle pin-button" type="button" aria-label={detail?.pinned ? 'Unpin card' : 'Pin card'} aria-pressed={!!detail?.pinned} disabled={!detail || busy} mix={on('click', () => { void change('', 'PATCH', { pinned: !detail!.pinned }) })}><PinIcon /></button>
+            <button class="perma-circle pin-button" type="button" aria-label={detail?.pinned ? 'Unpin card' : 'Pin card'} aria-pressed={!!detail?.pinned} disabled={!detail || busy} mix={on('click', () => { void change(routes.dashboard.cards.update.href(params()), { pinned: !detail!.pinned }) })}><PinIcon /></button>
           </aside>}
           <div class="perma-actions">
             {editing ? <><button type="submit" form="card-edit-form" class="perma-primary" disabled={busy || !editorReady || editorUploading}>{busy ? 'Saving…' : detail ? 'Save changes' : 'Create card'}</button><button class="perma-secondary" type="button" disabled={busy || (!detail && (!editorReady || editorUploading))} mix={on('click', () => { if (detail) cancel(); else void save(true) })}>{detail ? 'Cancel' : 'Create and add another'}</button></> : <><button class="perma-primary" type="button" disabled={busy} mix={on('click', edit)}>Edit <kbd>E</kbd></button><button class="perma-primary complete-button" type="button" disabled={busy || board.columns.length < 2} mix={on('click', toggleDone)}>{done ? 'Reopen' : 'Mark as Done'}<kbd>D</kbd></button></>}
@@ -218,11 +218,11 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
           {error && <p class="perma-error" role="alert">{error}</p>}
         </section>
         {detail && <section class="perma-discussion" aria-label="Comments">
-          {detail.files.some(file => file.id !== detail!.cover_file_id) && <div class="perma-files">{detail.files.filter(file => file.id !== detail!.cover_file_id).map(file => <a href={`/api/v1/boards/${board!.id}/files/${file.id}`} key={file.id} download><PaperclipIcon />{file.name}</a>)}</div>}
+          {detail.files.some(file => file.id !== detail!.cover_file_id) && <div class="perma-files">{detail.files.filter(file => file.id !== detail!.cover_file_id).map(file => <a href={routes.dashboard.boards.file.href({ boardId: board!.id, fileId: file.id })} key={file.id} download><PaperclipIcon />{file.name}</a>)}</div>}
           {[...detail.comments].reverse().map(entry => <article class="perma-comment" key={entry.id}><span class="perma-avatar" aria-hidden="true">{initials(entry.author)}</span><div class="perma-comment-content"><div class="perma-comment-meta"><strong>{entry.author}</strong><time dateTime={new Date(entry.created_at).toISOString()}>{age(entry.created_at)}</time></div>{entry.body_html ? <div class="lexxy-content" innerHTML={unsafeHTML(entry.body_html)} /> : <p class="plain-description">{entry.body}</p>}</div></article>)}
           <div class="perma-comment perma-comment-new"><span class="perma-avatar" aria-hidden="true">{initials(user.name)}</span><form class="perma-comment-compose" mix={[ref(node => { commentForm = node }), on('submit', async event => {
             event.preventDefault(); if (commentBlank || busy || commentUploading) return
-            if (await change('/comments', 'POST', { bodyHtml: comment })) { comment = ''; commentBlank = true; commentVersion++; handle.update() }
+            if (await change(routes.dashboard.cards.addComment.href(params()), { bodyHtml: comment })) { comment = ''; commentBlank = true; commentVersion++; handle.update() }
           })]}><RichEditor key={commentVersion} value="" label="Comment" onUploading={blocked => { commentUploading = blocked; handle.update() }} placeholder="Next, add some notes, context, pictures, or video about this…" onChange={(html, blank) => { comment = html; commentBlank = blank; handle.update() }} /><button class="perma-primary perma-post" type="submit" disabled={commentBlank || busy || commentUploading}>{busy ? 'Posting…' : 'Post'}</button></form></div>
           <div class="perma-subscribers"><h2>Subscribers</h2><p>Comment notifications are not enabled.</p></div>
         </section>}

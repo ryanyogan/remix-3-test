@@ -10,7 +10,7 @@ import { createTestRouter, origin, signUp } from '../../../../test/router.ts'
 const json = { Accept: 'application/json' }
 
 function get(href: string, cookie: string) {
-  return new Request(new URL(href, origin), { headers: { Cookie: cookie } })
+  return new Request(new URL(href, origin), { headers: { Origin: origin, Cookie: cookie } })
 }
 
 function post(
@@ -24,7 +24,7 @@ function post(
   return new Request(new URL(href, origin), {
     method: 'POST',
     body,
-    headers: { Cookie: cookie, ...headers },
+    headers: { Origin: origin, Cookie: cookie, ...headers },
   })
 }
 
@@ -305,7 +305,7 @@ function upload(href: string, cookie: string, file: File, id?: string) {
   return new Request(new URL(href, origin), {
     method: 'POST',
     body,
-    headers: { Cookie: cookie, ...json },
+    headers: { Origin: origin, Cookie: cookie, ...json },
   })
 }
 

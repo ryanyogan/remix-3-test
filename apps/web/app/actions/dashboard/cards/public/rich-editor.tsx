@@ -1,3 +1,4 @@
+import { routes } from '../../../../routes.ts'
 import { on, ref, type Handle } from 'remix/component'
 import { limits } from '../../../../data/limits.ts'
 
@@ -26,14 +27,14 @@ export function RichEditor(handle: Handle<{
   function changed() { handle.props.onUploading?.(uploading > 0 || failures.length > 0); handle.update() }
   function cleanup() {
     for (let request of requests) request.abort()
-    for (let id of staged) void fetch(`/api/v1/uploads/${id}`, { method: 'DELETE', keepalive: true }).catch(() => {})
+    for (let id of staged) void fetch(routes.dashboard.uploads.discard.href({ fileId: id }), { method: 'POST', keepalive: true }).catch(() => {})
     staged.clear()
   }
   function fail(file: File, message: string, retry: boolean) { failures.push({ id: ++sequence, file, message, retry }); changed() }
   function send(file: File, pending: PendingAttachment): Promise<UploadResult> {
     return new Promise((resolve, reject) => {
       let xhr = new XMLHttpRequest(); requests.add(xhr)
-      xhr.open('POST', '/api/v1/uploads'); xhr.responseType = 'json'; xhr.timeout = 120000
+      xhr.open('POST', routes.dashboard.uploads.create.href()); xhr.setRequestHeader('Accept', 'application/json'); xhr.responseType = 'json'; xhr.timeout = 120000
       xhr.upload.onprogress = event => { if (event.lengthComputable) pending.setUploadProgress(Math.max(1, Math.round(event.loaded / event.total * 95))) }
       xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr.response.data) : reject(new Error(xhr.response?.error ?? 'Upload failed. Try again.'))
       xhr.onerror = () => reject(new Error('Upload failed. Check your connection and try again.'))
@@ -77,7 +78,7 @@ export function RichEditor(handle: Handle<{
       editor.setAttribute('aria-label', handle.props.label)
       editor.setAttribute('value', handle.props.value)
       editor.setAttribute('placeholder', handle.props.placeholder)
-      editor.dataset.blobUrlTemplate = '/api/v1/files/:signed_id'
+      editor.dataset.blobUrlTemplate = routes.dashboard.uploads.file.href({ fileId: ':signed_id' }).replace('%3Asigned_id', ':signed_id')
       // Use Lexxy's pending-attachment interface rather than Rails Active Storage.
       // This event covers toolbar selection, dropped files, and clipboard images.
       editor.addEventListener('lexxy:file-accept', event => {

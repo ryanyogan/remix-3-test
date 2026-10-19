@@ -2,7 +2,6 @@ import { clientEntry, on, ref, type Handle } from 'remix/component'
 import { limits } from '../../../../data/limits.ts'
 import { routes } from '../../../../routes.ts'
 import { ArrowRightIcon, BoardIcon } from '../../../../ui/public/icons.tsx'
-import { apiRequest } from './api-client.ts'
 
 interface NewBoardFormProps {
   name?: string
@@ -22,18 +21,11 @@ export const NewBoardForm = clientEntry(import.meta.url, function NewBoardForm(h
     }, { signal: handle.signal })
   })
   return () => <form method="post" action={routes.dashboard.boards.create.href()} data-rmx-document class="new-board-form" aria-busy={busy} mix={on('submit', async event => {
-    event.preventDefault()
-    if (busy) return
+    if (busy) { event.preventDefault(); return }
     let name = nameInput?.value.trim()
-    if (!name) { error = 'Board names can’t be blank'; await handle.update(); nameInput?.focus(); return }
+    if (!name) { event.preventDefault(); error = 'Board names can’t be blank'; await handle.update(); nameInput?.focus(); return }
     busy = true; error = undefined; handle.update()
-    try {
-      let board = await apiRequest<{ id: string }>('/boards', 'POST', { name })
-      location.assign(routes.dashboard.boards.show.href({ boardId: board.id }))
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not create the board.'
-      busy = false; handle.update()
-    }
+
   })}>
     <h1>Create a new board</h1>
     <label class="visually-hidden" htmlFor="board-name">Board name</label>
