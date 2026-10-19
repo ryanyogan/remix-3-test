@@ -1,0 +1,27 @@
+{
+  "name": "@trellix/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --import remix/node-tsx server.ts",
+    "start": "node --import remix/node-tsx server.ts",
+    "test": "NODE_ENV=test remix test",
+    "typecheck": "tsc --noEmit",
+    "cf:deploy": "cf deploy",
+    "cf:dev": "cf dev"
+  },
+  "dependencies": {
+    "hono": "^4.13.13",
+    "remix": "^3.0.0",
+    "@trellix/data": "workspace:*",
+    "@trellix/session": "workspace:*",
+    "@trellix/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-c82c3efb3",
+    "@types/node": "latest",
+    "cf": "1.0.0-beta.17",
+    "typescript": "latest",
+    "vite": "^8.3.4"
+  }
+}

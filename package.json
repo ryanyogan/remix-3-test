@@ -1,23 +1,35 @@
 {
-  "name": "remix-3-test",
+  "name": "trellix",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
-    "hmr": "NODE_ENV=development node hmr.ts",
-    "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
-    "test": "NODE_ENV=test remix test",
-    "typecheck": "tsc --noEmit"
-  },
   "engines": {
     "node": ">=24.3.0"
   },
-  "dependencies": {
-    "@remix-run/ui": "0.12.1",
-    "remix": "^3.0.0"
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "hmr": "node scripts/dev.mjs",
+    "start": "node scripts/dev.mjs --production",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "tsc --noEmit",
+    "cf:deploy": "node scripts/deploy.mjs",
+    "cf:deploy:api": "pnpm --filter @trellix/api cf:deploy",
+    "cf:deploy:web": "pnpm --filter @trellix/web cf:deploy",
+    "cf:dev": "pnpm --filter @trellix/web cf:dev",
+    "cf:migrate": "cf d1 migrations apply 8ec80d3b-b315-46c4-aa9c-0459d2a4ab3d --dir packages/data/migrations --pattern \"packages/data/migrations/*/up.sql\"",
+    "doctor": "pnpm --filter @trellix/web exec remix doctor",
+    "cf:migrate:local": "cf d1 migrations apply 8ec80d3b-b315-46c4-aa9c-0459d2a4ab3d --dir packages/data/migrations --pattern \"packages/data/migrations/*/up.sql\" --local",
+    "test:browser": "node scripts/browser-check.mjs",
+    "test:browser:home": "node scripts/home-browser-check.mjs",
+    "test:browser:workspace": "node scripts/workspace-browser-check.mjs",
+    "test:browser:board": "node scripts/board-browser-check.mjs",
+    "test:browser:board-controls": "node scripts/board-controls-browser-check.mjs"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-c82c3efb3",
     "@types/node": "latest",
-    "typescript": "latest"
+    "cf": "1.0.0-beta.17",
+    "typescript": "latest",
+    "vite": "^8.3.4",
+    "remix": "^3.0.0"
   }
 }

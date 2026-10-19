@@ -1,0 +1,12 @@
+{
+  "name": "@trellix/session",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@remix-run/cookie": "1.0.0",
+    "@remix-run/session": "1.0.0"
+  }
+}

@@ -1,0 +1,76 @@
+import { createController } from "remix/router";
+import { loadNavigation } from "@trellix/data/activity";
+import { findOwnedBoard, loadBoardData } from "@trellix/data/boards";
+import { loadCard } from "@trellix/data/cards";
+import { requireUser } from "../../../middleware/require-user.ts";
+import { readTheme } from "../../../ui/theme.ts";
+import { routes } from "../../../routes.ts";
+import { DashboardLayout } from "../layout.tsx";
+import { CardPage } from "./public/card-page.tsx";
+
+export default createController(routes.dashboard.cards, {
+  middleware: [requireUser()],
+  actions: {
+    async new(context) {
+      let user = context.auth.identity;
+      let navigation = await loadNavigation(context.db, user.id);
+      let params = new URL(context.request.url).searchParams;
+      let requested = params.get("board");
+      let selected = requested
+        ? navigation.boards.find((b) => b.id === requested)
+        : navigation.boards[0];
+      if (requested && !selected)
+        return new Response("Board not found", { status: 404 });
+      let board =
+        selected && (await findOwnedBoard(context.db, user.id, selected.id));
+      return context.render(
+        <DashboardLayout
+          user={user}
+          theme={await readTheme(context.request)}
+          title="Add a card"
+          current="boards"
+          navigation={navigation}
+          card
+        >
+          <CardPage
+            user={{ id: user.id, name: user.name }}
+            boards={navigation.boards}
+            tags={navigation.tags}
+            initialColumn={params.get("column") ?? undefined}
+            board={board ? await loadBoardData(context.db, board) : undefined}
+          />
+        </DashboardLayout>,
+      );
+    },
+    async show(context) {
+      let user = context.auth.identity;
+      let board = await findOwnedBoard(
+        context.db,
+        user.id,
+        context.params.boardId,
+      );
+      if (!board) return new Response("Card not found", { status: 404 });
+      let detail = await loadCard(context.db, board.id, context.params.cardId);
+      if (!detail) return new Response("Card not found", { status: 404 });
+      let navigation = await loadNavigation(context.db, user.id);
+      return context.render(
+        <DashboardLayout
+          user={user}
+          theme={await readTheme(context.request)}
+          navigation={navigation}
+          title={detail.title}
+          current="boards"
+          card
+        >
+          <CardPage
+            user={{ id: user.id, name: user.name }}
+            board={await loadBoardData(context.db, board)}
+            detail={detail}
+            boards={navigation.boards}
+            tags={navigation.tags}
+          />
+        </DashboardLayout>,
+      );
+    },
+  },
+});

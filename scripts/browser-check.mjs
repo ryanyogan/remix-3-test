@@ -1,0 +1,50 @@
+import {send,navigate,evaluate,click,type,key,waitFor,screenshot,close} from './browser-cdp.mjs'
+const origin=process.env.QA_ORIGIN
+if (!origin) { close(); throw Error('Set QA_ORIGIN; Chromium must be signed into a test account.') }
+const ready=()=>new Promise(r=>setTimeout(r,300))
+let cardId, boardId
+const cardTitle = 'Full page editor check ' + Date.now()
+async function check(expr,label){if(!await evaluate(expr))throw Error(label)}
+async function shortcut(key,code){await send('Input.dispatchKeyEvent',{type:'keyDown',key,code,modifiers:2,windowsVirtualKeyCode:key.toUpperCase().charCodeAt(0)});await send('Input.dispatchKeyEvent',{type:'keyUp',key,code,modifiers:2})}
+try {
+await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1200,deviceScaleFactor:1,mobile:false})
+await navigate(origin+'/dashboard');await ready();await click('.new-card-trigger')
+await waitFor('location.pathname==="/dashboard/cards/new" && !!document.querySelector("lexxy-editor [contenteditable]")')
+await check('!document.querySelector(".new-card-dialog")','Creation is still modal')
+await type('#card-title',cardTitle)
+await type('lexxy-editor [contenteditable]','Formatting survives a reload')
+await shortcut('a','KeyA');await click('lexxy-toolbar [data-command="bold"]')
+await waitFor('document.querySelector("lexxy-editor").value.includes("<strong>")')
+await click('.perma-actions button[type=submit]')
+await waitFor('!!document.querySelector(".card-open") && location.pathname.startsWith("/dashboard/boards/")');await ready()
+let createdHref=await evaluate(`[...document.querySelectorAll(".card-open")].find(a=>a.textContent.includes(${JSON.stringify(cardTitle)}))?.getAttribute("href")`);if(!createdHref)throw Error('Created card missing from board')
+await click(`.card-open[href="${createdHref}"]`);await waitFor('!!document.querySelector("#card-detail-heading") && !!document.querySelector(".perma-comment-compose [contenteditable]")');await ready()
+cardId=await evaluate('location.pathname.split("/").at(-1)');boardId=await evaluate('location.pathname.split("/").at(-2)')
+await check('document.querySelector(".perma-description strong")?.textContent==="Formatting survives a reload"','Rich creation lost formatting')
+await navigate(origin+`/dashboard/cards/${boardId}/${cardId}`);await ready()
+await check('!!document.querySelector(".perma-description strong")','Reload lost rich text')
+await type('[aria-label="New step"]','Check the new page');await key('Enter');await waitFor('document.querySelectorAll(".perma-step").length===1')
+await click('.perma-step input');await waitFor('document.querySelector(".perma-step input").checked && !document.querySelector(".perma-step input").disabled')
+await click('.pin-button');await waitFor('document.querySelector(".pin-button").getAttribute("aria-pressed")==="true" && !document.querySelector(".pin-button").disabled')
+await click('[aria-label="Edit tags"]');await type('[aria-label="Add tag"]','design-check');await key('Enter');await waitFor('document.querySelector(".perma-header").textContent.includes("design-check")')
+await waitFor('!!document.querySelector(".perma-comment-compose [contenteditable]")')
+await type('.perma-comment-compose [contenteditable]','A formatted comment')
+await shortcut('a','KeyA');await click('.perma-comment-compose lexxy-toolbar [data-command="italic"]')
+await waitFor('document.querySelector(".perma-comment-compose lexxy-editor").value.includes("<em>")')
+await click('.perma-post');await waitFor('!!document.querySelector(".perma-comment-content em")')
+await check('document.querySelector(".perma-post").disabled','Comment did not clear')
+await click('.complete-button');await waitFor('document.querySelector(".complete-button").textContent.includes("Reopen") && !document.querySelector(".complete-button").disabled')
+await screenshot('/tmp/trellix-card-saved.png')
+await key('e','KeyE');await waitFor('!!document.querySelector("#card-title") && !document.querySelector(".perma-actions button[type=submit]").disabled')
+await type('#card-title',' revised');await click('.perma-actions button[type=submit]');await waitFor('document.querySelector("#card-detail-heading")?.textContent.includes("revised")')
+await check('!!document.querySelector(".perma-description strong")','Editing lost rich text')
+await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+await check('document.documentElement.scrollWidth<=innerWidth','Mobile card overflow')
+await screenshot('/tmp/trellix-card-mobile.png')
+await click('.card-route-back');await waitFor(`location.pathname==='/dashboard/boards/${boardId}'`);await ready()
+await click(`a.card-open[href$="/${cardId}"]`);await waitFor(`location.pathname==='/dashboard/cards/${boardId}/${cardId}'`)
+console.log(JSON.stringify({fullRoute:true,richCreation:true,persistence:true,steps:true,tags:true,pinning:true,richComments:true,completion:true,editing:true,mobileBounds:true,boardLink:true}))
+} finally {
+if(cardId&&boardId)console.log('cleanup',await evaluate(`fetch('/api/v1/boards/${boardId}/cards/${cardId}',{method:'DELETE'}).then(r=>r.status)`))
+close()
+}

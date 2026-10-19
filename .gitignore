@@ -3,3 +3,12 @@ db/*.sqlite
 tmp/
 .DS_Store
 uploads/
+.remix-cloudflare/
+.cloudflare/
+.wrangler/
+.dev.vars*
+.env*
+worker-startup.cpuprofile
+worker-configuration.d.ts
+
+apps/web/app/actions/public/lexxy/runtime/
