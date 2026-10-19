@@ -163,7 +163,8 @@ export async function upsertColumn(
   if (existing) {
     if (existing.board_id !== boardId) return false
     await db.transaction(async tx => {
-      await tx.update(boardColumns, existing.id, { name: values.name })
+      // D1 batches cannot return rows; Database.update() implicitly requests RETURNING.
+      await tx.query(boardColumns).where({ id: existing.id }).update({ name: values.name })
       if (values.color) await tx.exec(sql`insert into column_colors(column_id, color) values (${existing.id}, ${values.color}) on conflict(column_id) do update set color = excluded.color`)
     })
     return true
@@ -199,7 +200,7 @@ export async function deleteColumn(db: Database, _storage: FileStorage, boardId:
   let items = await db.findMany(boardItems, { where: { column_id: columnId }, orderBy: ['position', 'asc'] })
   await db.transaction(async tx => {
     for (let [index, item] of items.entries()) {
-      await tx.update(boardItems, item.id, { column_id: intake.id, position: tail + index })
+      await tx.query(boardItems).where({ id: item.id }).update({ column_id: intake.id, position: tail + index })
       await recordActivity(tx, item.id, 'moved', intake.name)
     }
     await tx.delete(boardColumns, columnId)
@@ -215,8 +216,8 @@ export async function moveColumn(db: Database, boardId: string, columnId: string
   if (index < 0 || !neighbor) return false
   let column = work[index]
   await db.transaction(async tx => {
-    await tx.update(boardColumns, column.id, { position: neighbor.position })
-    await tx.update(boardColumns, neighbor.id, { position: column.position })
+    await tx.query(boardColumns).where({ id: column.id }).update({ position: neighbor.position })
+    await tx.query(boardColumns).where({ id: neighbor.id }).update({ position: column.position })
   })
   return true
 }

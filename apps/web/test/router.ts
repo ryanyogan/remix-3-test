@@ -1,4 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
+import { createD1Database } from '@trellix/data/d1-database'
+import { d1Binding } from './d1.ts'
 import * as assert from 'remix/assert'
 import { createCookie } from 'remix/cookie'
 import { createSqliteDatabase } from 'remix/data-table/sqlite'
@@ -12,9 +14,12 @@ import { routes } from '../app/routes.ts'
 export const origin = 'http://localhost'
 
 // A router backed by a fresh, migrated in-memory database, memory sessions, and memory uploads.
-export async function createTestRouter() {
-  let db = createSqliteDatabase(new DatabaseSync(':memory:'))
-  await migrateDatabase(db)
+export async function createTestRouter(database: 'sqlite' | 'd1' = 'sqlite') {
+  let sqlite = new DatabaseSync(':memory:')
+  sqlite.exec('pragma foreign_keys = on')
+  let local = createSqliteDatabase(sqlite)
+  await migrateDatabase(local)
+  let db = database === 'd1' ? createD1Database(d1Binding(sqlite)) : local
 
   let uploads = createMemoryFileStorage()
   let router = createAppRouter({
