@@ -9,10 +9,17 @@ interface Env {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     let url = new URL(request.url)
-    let response = url.pathname.startsWith('/assets/')
-      ? await serveAsset(request, url, env)
-      : await router.fetch(request)
-    return withSecurityHeaders(response)
+    try {
+      let response = url.pathname.startsWith('/assets/')
+        ? await serveAsset(request, url, env)
+        : await router.fetch(request)
+      return withSecurityHeaders(response)
+    } catch (error) {
+      // router.fetch() rejects when an action or middleware throws. Report it and answer with
+      // a generic 500 rather than the platform's error page, which skips the security headers.
+      if (!request.signal.aborted) console.error('Unhandled request error', error)
+      return withSecurityHeaders(new Response('Internal Server Error', { status: 500 }))
+    }
   },
 }
 
@@ -37,7 +44,9 @@ function withSecurityHeaders(response: Response): Response {
 async function serveAsset(request: Request, url: URL, env: Env): Promise<Response> {
   // Static Assets redirect any path that is not in their canonical (percent-encoded) form, so
   // look the key up encoded segment by segment, and follow a redirect internally just in case.
-  let pathname = assetKey(url.pathname).split('/').map(encodeURIComponent).join('/')
+  let key: string
+  try { key = assetKey(url.pathname) } catch { return new Response('Not Found', { status: 404 }) }
+  let pathname = key.split('/').map(encodeURIComponent).join('/')
   let response = await env.ASSETS.fetch(new Request(new URL(pathname, url), request))
   let location = response.headers.get('Location')
   if (response.status >= 300 && response.status < 400 && location) {
