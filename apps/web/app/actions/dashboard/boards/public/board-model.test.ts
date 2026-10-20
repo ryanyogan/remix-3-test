@@ -141,3 +141,28 @@ describe('optimistic write ordering', () => {
     } finally { globalThis.fetch = original }
   })
 })
+
+describe('failed card saves', () => {
+  it('rejects waiting on a card whose save failed, and does not upload to it', async () => {
+    let original = globalThis.fetch
+    let urls: string[] = []
+    globalThis.fetch = async (input) => {
+      urls.push(String(input))
+      return Response.json({ error: 'Nope' }, { status: 500 })
+    }
+    try {
+      let store = new BoardStore('board', async () => {})
+      let create = store.submit({ type: 'upsertItem', id: 'card', columnId: 'todo', title: 'Draft', position: 1 })
+      let opened = store.whenItemSettled('card')
+      let upload = store.submit({ type: 'uploadFile', id: 'f1', itemId: 'card', file: new File(['x'], 'x.txt') })
+      await create
+      await assert.rejects(opened)
+      await upload
+      assert.equal(urls.length, 1)
+      assert.equal(store.error, "The card wasn't saved, so the file wasn't attached.")
+      assert.equal(store.mutations.length, 0)
+      // Nothing is pending once it failed, so a later open is not blocked.
+      await store.whenItemSettled('card')
+    } finally { globalThis.fetch = original }
+  })
+})

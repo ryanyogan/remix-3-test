@@ -205,7 +205,11 @@ export class BoardStore extends TypedEventTarget<{ change: Event }> {
       if (previous) await previous.done
       // A file can be attached to a card whose create is still in flight; the upload waits
       // for the card to exist on the server.
-      if (mutation.type === 'uploadFile') await this.whenItemSettled(mutation.itemId)
+      if (mutation.type === 'uploadFile') {
+        await this.whenItemSettled(mutation.itemId).catch(() => {
+          throw new MutationError("The card wasn't saved, so the file wasn't attached.")
+        })
+      }
       if (entry.controller.signal.aborted) return
 
       let { href, init } = mutationRequest(this.#boardId, mutation)
@@ -242,12 +246,16 @@ export class BoardStore extends TypedEventTarget<{ change: Event }> {
     this.#emit()
   }
 
+  // Resolves once the card's latest change is saved, or at once when nothing is pending.
+  // Rejects when that change failed: the card may not exist on the server, and the failure is
+  // already shown. Once the board refreshes nothing is pending, so a retry goes through.
   async whenItemSettled(itemId: string) {
     let pending = this.#pending.get(`item:${itemId}`)
     while (pending && !pending.settled) {
       await pending.done
       let next = this.#pending.get(`item:${itemId}`)
       if (next === pending) break
+      if (!next && !pending.settled) throw new MutationError("That card wasn't saved.")
       pending = next
     }
   }

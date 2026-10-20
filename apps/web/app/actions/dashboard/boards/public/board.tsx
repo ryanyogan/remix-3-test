@@ -172,9 +172,10 @@ export const Board = clientEntry(
         }, 1000)
       },
       open(id) {
-        void store.whenItemSettled(id).then(() => {
+        // A failed save already shows its error; opening would only reach a missing card.
+        store.whenItemSettled(id).then(() => {
           location.assign(routes.dashboard.cards.show.href({ boardId: handle.props.board.id, cardId: id }))
-        }).catch(() => store.reject('Save the card before opening it.'))
+        }, () => {})
       },
       isNew: (id) => fresh.has(id),
       hasLanded: (id) => landed.has(id),
