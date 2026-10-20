@@ -101,6 +101,21 @@ describe('dashboard', () => {
     assert.equal(dashboard.status, 303)
   })
 
+  it('sends a signed-out frame request to sign in instead of rendering login inside the frame', async () => {
+    let { router } = await createTestRouter()
+    let frame = await router.fetch(new Request(new URL(routes.dashboard.activity.href(), origin), {
+      headers: { Accept: 'text/html', 'X-Remix-Frame': 'true' },
+    }))
+    assert.equal(frame.status, 401)
+    assert.equal(frame.headers.get('Cache-Control'), 'private, no-store')
+    let html = await frame.text()
+    assert.match(html, /Sign in again/)
+    assert.doesNotMatch(html, /type="password"/)
+
+    let page = await router.fetch(get(routes.dashboard.activity.href()))
+    assert.equal(page.status, 303)
+  })
+
   it('revokes copies of the session and other sign-ins when logging out', async () => {
     let { router } = await createTestRouter()
     let cookie = await signUp(router)

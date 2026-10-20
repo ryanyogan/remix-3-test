@@ -12,7 +12,7 @@ import { createController } from 'remix/router'
 
 import { boardItemFiles, boardItems, boards } from '../../../data/tables.ts'
 import { limits } from '../../../data/limits.ts'
-import { requireUser } from '../../../middleware/require-user.ts'
+import { requireUser } from '../../../middleware/require-user.tsx'
 import { routes } from '../../../routes.ts'
 import { readTheme } from '../../../ui/theme.ts'
 import {

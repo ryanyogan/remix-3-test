@@ -6,7 +6,7 @@ import { createController } from 'remix/router'
 import { ActivityTimeline, ActivityMore, ActivityError } from './public/activity.tsx'
 import { activityHref, readActivityFilters, activityTimeZone } from './public/activity-urls.ts'
 
-import { requireUser } from '../../middleware/require-user.ts'
+import { requireUser } from '../../middleware/require-user.tsx'
 import { routes } from '../../routes.ts'
 import { readTheme } from '../../ui/theme.ts'
 import { loadProgress } from './boards/data.ts'
