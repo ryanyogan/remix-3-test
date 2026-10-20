@@ -36,22 +36,28 @@ export default createController(routes.signup, {
       let { name, email, password } = parsed.value
       let id = crypto.randomUUID()
 
-      let existing = await context.db.findOne(users, { where: { email } })
-      if (existing !== null) {
+      let taken = () => {
         let issues = [{ message: 'An account with this email already exists', path: ['email'] }]
         return context.render(<SignupPage theme={theme} values={values} issues={issues} />, {
           status: 409,
         })
       }
+      if ((await context.db.findOne(users, { where: { email } })) !== null) return taken()
 
-      // The unique index on users.email still rejects a concurrent duplicate.
-      await context.db.create(users, {
-        id,
-        name,
-        email,
-        password_hash: await hashPassword(password),
-        created_at: Date.now(),
-      })
+      try {
+        await context.db.create(users, {
+          id,
+          name,
+          email,
+          password_hash: await hashPassword(password),
+          created_at: Date.now(),
+        })
+      } catch (error) {
+        // The unique index on users.email rejects a concurrent duplicate that passed the check
+        // above; answer it the same way rather than with a 500.
+        if ((await context.db.findOne(users, { where: { email } })) !== null) return taken()
+        throw error
+      }
 
       let session = completeAuth(context)
       session.set('auth', { userId: id, version: 0 } satisfies SessionAuth)

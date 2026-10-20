@@ -84,4 +84,16 @@ describe('signup', () => {
     assert.match(await response.text(), /already exists/)
     assert.equal((await db.findMany(users)).length, 1)
   })
+
+  it('rejects a duplicate email sent at the same time', async () => {
+    let { db, router } = await createTestRouter()
+    // Both pass the existing-email check while their passwords hash; the index decides.
+    let responses = await Promise.all([
+      router.fetch(signupRequest(validFields)),
+      router.fetch(signupRequest({ ...validFields, name: 'Someone Else' })),
+    ])
+
+    assert.deepEqual(responses.map(response => response.status).sort(), [303, 409])
+    assert.equal((await db.findMany(users)).length, 1)
+  })
 })
