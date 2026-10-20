@@ -13,7 +13,7 @@ import { loadProgress } from './boards/data.ts'
 import { AccountPage, OverviewPage, ActivityContent, InsightsPage, NotificationsPage } from './pages.tsx'
 
 export default createController(routes.dashboard, {
-  middleware: [requireUser()],
+  middleware: requireUser(),
   actions: {
     navigation: context => dataResponse(context, services => loadNavigation(services.db, services.user.id)),
     search: context => dataResponse(context, async services => Response.json(await searchCards(services, new URL(context.request.url).searchParams), { headers: privateHeaders })),

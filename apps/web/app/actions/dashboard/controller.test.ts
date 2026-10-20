@@ -101,6 +101,17 @@ describe('dashboard', () => {
     assert.equal(dashboard.status, 303)
   })
 
+  it('keeps every signed-in page out of shared caches', async () => {
+    let { router } = await createTestRouter()
+    let cookie = await signUp(router)
+    let d = routes.dashboard
+    for (let href of [d.index.href(), d.insights.href(), d.notifications.href(), d.account.href(), d.boards.index.href()]) {
+      let response = await router.fetch(get(href, cookie))
+      assert.equal(response.status, 200, href)
+      assert.equal(response.headers.get('Cache-Control'), 'private, no-store', href)
+    }
+  })
+
   it('sends a signed-out frame request to sign in instead of rendering login inside the frame', async () => {
     let { router } = await createTestRouter()
     let frame = await router.fetch(new Request(new URL(routes.dashboard.activity.href(), origin), {

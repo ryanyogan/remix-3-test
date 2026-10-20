@@ -1,9 +1,11 @@
 import { createCookie } from '@remix-run/cookie'
 import { createCookieSessionStorage } from '@remix-run/session/cookie-storage'
 
-export function sessionCookie(secret: string) {
+// `secure` matters only where the cookie is set (the web app); readers only verify it.
+export function sessionCookie(secret: string, options: { secure?: boolean } = {}) {
   return createCookie('__session', {
     secrets: [secret], httpOnly: true, sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30,
+    secure: options.secure ?? false,
   })
 }
 

@@ -90,7 +90,8 @@ function createSessionCookie() {
     throw new Error('SESSION_SECRET must be set in production')
   }
 
-  return signedSessionCookie(secret ?? 'dev-only-session-secret')
+  // Browsers also accept secure cookies from http://localhost, so `pnpm start` keeps working.
+  return signedSessionCookie(secret ?? 'dev-only-session-secret', { secure: process.env.NODE_ENV === 'production' })
 }
 
 export const router = createAppRouter()

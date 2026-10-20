@@ -79,7 +79,7 @@ const notFound = () => new Response('Board not found', { status: 404 })
 const inlineTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
 
 export default createController(routes.dashboard.boards, {
-  middleware: [requireUser()],
+  middleware: requireUser(),
   actions: {
     options: (context) =>
       dataResponse(context, (services) => listBoards(services.db, services.user.id)),

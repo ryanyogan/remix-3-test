@@ -14,7 +14,7 @@ import { DashboardLayout } from '../layout.tsx'
 import { CardPage } from './public/card-page.tsx'
 
 export default createController(routes.dashboard.cards, {
-  middleware: [requireUser()],
+  middleware: requireUser(),
   actions: {
     data: (context) =>
       dataResponse(context, async (services) => {

@@ -1,5 +1,6 @@
 import { requireAuth } from 'remix/middleware/auth'
 import { redirect } from 'remix/response/redirect'
+import { createMiddleware, type Middleware } from 'remix/router'
 
 import type { User } from '../data/tables.ts'
 import type { AppContext } from '../router.ts'
@@ -7,9 +8,10 @@ import { routes } from '../routes.ts'
 import { SignedOut } from '../ui/public/signed-out.tsx'
 
 // Controller middleware for signed-in pages. Controller middleware does not flow into
-// nested route maps, so every controller under routes.dashboard installs it.
+// nested route maps, so every controller under routes.dashboard installs it. Signed-in
+// responses are personal, so shared caches must never store them.
 export function requireUser() {
-  return requireAuth<User>({ onFailure(context) {
+  return createMiddleware(privateCache, requireAuth<User>({ onFailure(context) {
     let headers = { 'Cache-Control': 'private, no-store' }
     if (context.request.headers.get('Accept')?.includes('application/json')) {
       return Response.json({ error: 'Sign in to continue' }, { status: 401, headers })
@@ -20,5 +22,11 @@ export function requireUser() {
       return (context as unknown as AppContext).render(<SignedOut href={routes.login.index.href()} />, { status: 401, headers })
     }
     return redirect(routes.login.index.href(), 303)
-  } })
+  } }))
+}
+
+const privateCache: Middleware = async (_context, next) => {
+  let response = await next()
+  if (!response.headers.has('Cache-Control')) response.headers.set('Cache-Control', 'private, no-store')
+  return response
 }
