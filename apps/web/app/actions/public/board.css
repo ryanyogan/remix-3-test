@@ -237,7 +237,9 @@
   .board-popup { position: fixed; inset: auto; margin: 0; width: max-content; min-width: min(25ch, calc(100vw - 16px)); max-width: calc(100vw - 16px); max-height: 70dvh; overflow: auto; padding: 1em; border: 1px solid var(--line); border-radius: .5em; color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px #0000000d, 0 .2em .2em #0000000d, 0 .4em .4em #0000000d, 0 .8em .8em #0000000d; font: 400 calc(var(--board-rem) * .85)/1.375 var(--font-body); }
   .board-popup::backdrop { background: transparent; }
   .popup-option { display: flex; align-items: center; justify-content: start; gap: .5em; width: 100%; padding: .5em .4em; margin: 0; border: 0; border-radius: .3em; background: transparent; color: inherit; font: 500 1em/1.375 var(--font-body); text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap; }
-  .popup-option:hover, .popup-option:focus-visible { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: inherit; }
+  .popup-option:hover, .popup-option:focus-visible, .popup-option[data-highlighted="true"] { background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: inherit; }
+  .board-menu-list { display: flex; flex-direction: column; outline: none; }
+  .board-menu-list .popup-option { cursor: pointer; outline: none; }
   .popup-option:disabled { color: var(--ink); opacity: .3; cursor: default; background: transparent; }
   .popup-option .board-glyph { width: 1.4em; height: 1.4em; }
   .board-quick-filter .popup-option > span:first-child { flex: 1; }

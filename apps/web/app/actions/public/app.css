@@ -1750,15 +1750,15 @@
   .inline-filter { display: inline; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   .inline-filter:focus-visible { outline: 2px solid var(--home-blue); outline-offset: 4px; border-radius: 2px; }
   /* Scale follows basecamp/fizzy's popup.css, inputs.css, and txt-small filters. */
-  .activity-filter-popover { position: fixed; inset: auto; margin: 0; width: min(25ch, calc(100vw - 24px)); padding: 19px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: .5em; background: var(--surface); color: var(--ink); box-shadow: 0 5px 10px #0002; font: 400 16px/1.375 var(--font-body); letter-spacing: normal; text-align: left; text-wrap: wrap; }
-  .activity-filter-popover > h2 { margin: 0 .5ch 10px; font: 800 1em/1.375 var(--font-body); }
-  .activity-filter-input { display: block; width: 100%; padding: .5em .8em; border: 1px solid var(--home-blue); border-radius: .5em; outline: none; background: var(--surface); color: var(--ink); font: inherit; }
-  .activity-filter-input:focus { box-shadow: 0 0 0 1px var(--home-blue); }
-  .activity-filter-options { display: grid; gap: 1px; margin-top: 10px; }
-  .activity-filter-options > button { display: block; width: 100%; min-width: 0; padding: .5ch .4rem; border: 0; border-radius: .3em; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
-  .activity-filter-options > button:hover, .activity-filter-options > button[data-active] { background: var(--accent-soft); }
-  .activity-filter-options > button[aria-selected="true"] { font-weight: 650; }
-  .activity-filter-empty { margin: 16px 8px 4px; color: var(--ink-3); font: 400 15px/1.4 var(--font-body); }
+  .activity-filter-popover { margin: 0; width: min(25ch, calc(100vw - 24px)); padding: 19px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: .5em; background: var(--surface); color: var(--ink); box-shadow: 0 5px 10px #0002; font: 400 16px/1.375 var(--font-body); letter-spacing: normal; text-align: left; text-wrap: wrap; }
+  .activity-filter-popover .search-picker-heading { margin: 0 .5ch 10px; font: 800 1em/1.375 var(--font-body); }
+  .activity-filter-popover .search-picker-input { padding: .5em .8em; border: 1px solid var(--home-blue); border-radius: .5em; outline: none; background: var(--surface); color: var(--ink); font: inherit; }
+  .activity-filter-popover .search-picker-input:focus { box-shadow: 0 0 0 1px var(--home-blue); }
+  .activity-filter-popover .search-picker-options { gap: 1px; margin-top: 10px; }
+  .activity-filter-popover .search-picker-option { padding: .5ch .4rem; border-radius: .3em; overflow-wrap: anywhere; }
+  .activity-filter-popover .search-picker-option[data-highlighted="true"] { background: var(--accent-soft); }
+  .activity-filter-popover .search-picker-option[aria-selected="true"] { font-weight: 650; }
+  .activity-filter-popover .search-picker-empty { margin: 16px 8px 4px; color: var(--ink-3); font: 400 15px/1.4 var(--font-body); }
   .activity-filter-note { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }
   .activity-filter-note a { margin-left: 10px; }
   .home-action, .home-heading .new-board-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--home-blue); color: white; border: 1px solid transparent; padding: 7px 15px; border-radius: 999px; font: 600 16px/1.3 var(--font-body); white-space: nowrap; cursor: pointer; text-decoration: none; box-shadow: none; }
@@ -2007,21 +2007,30 @@
 .card-route-page .perma-tag-button .fizzy-icon { width: 18px; height: 18px; }
 .card-route-page .perma-edit lexxy-editor { --lexxy-toolbar-height: calc(var(--lexxy-toolbar-button-size) + 16px); }
 .card-route-page .perma-edit lexxy-toolbar { border-top: 1px solid var(--line-strong); padding-top: 7px; }
-.card-route-page .card-picker { position: fixed; inset: auto; margin: 0; width: min(25ch, calc(100vw - 24px)); max-width: calc(100vw - 24px); box-sizing: border-box; padding: 20px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 8px 10px #0002; font: 400 16px/1.4 var(--font-body); overflow-y: auto; }
-.card-picker-heading { display: flex; align-items: start; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
-.card-route-page .card-picker h2 { margin: 0; font: 800 18px/1.25 var(--font-body); }
-.card-picker-heading kbd { font-size: 12px; }
-.card-route-page .card-picker input { display: block; width: 100%; min-width: 0; box-sizing: border-box; margin-bottom: 12px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); background: transparent; font: inherit; }
-.card-route-page .card-picker input:focus { border-color: #2d6eea; outline: 2px solid #2d6eea; outline-offset: 0; }
-.card-picker-options { display: flex; flex-direction: column; gap: 2px; }
-.card-route-page .card-picker-options button { display: flex; gap: 8px; align-items: center; width: 100%; border: 0; border-radius: 5px; padding: 6px 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.card-picker-options button > span:first-child { flex: 1; overflow-wrap: anywhere; }
-.card-picker-options .icon { width: 18px; height: 18px; flex-shrink: 0; }
-.card-picker-options kbd { font-size: 12px; }
-.card-route-page .card-picker-options button[data-active], .card-route-page .card-picker-options button:hover { background: #d8e6f5; color: #19263e; }
-.card-route-page .card-picker-options button:focus-visible { outline: 2px solid #2d6eea; }
-.card-route-page #card-tags .card-picker-options button { color: #2d6eea; }
-.card-picker-empty { margin: 5px 8px; color: var(--ink-3); }
+.card-route-page .card-picker { margin: 0; width: min(25ch, calc(100vw - 24px)); max-width: calc(100vw - 24px); box-sizing: border-box; padding: 20px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px var(--line), 0 8px 10px #0002; font: 400 16px/1.4 var(--font-body); overflow-y: auto; }
+.card-picker .search-picker-heading { align-items: start; justify-content: space-between; gap: 10px; margin: 0 0 12px; }
+.card-route-page .card-picker .search-picker-title { font: 800 18px/1.25 var(--font-body); }
+.card-picker .search-picker-heading kbd { font-size: 12px; }
+.card-route-page .card-picker .search-picker-input { margin-bottom: 12px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); background: transparent; font: inherit; }
+.card-route-page .card-picker .search-picker-input:focus { border-color: #2d6eea; outline: 2px solid #2d6eea; outline-offset: 0; }
+.card-picker .search-picker-options { gap: 2px; }
+.card-route-page .card-picker .search-picker-option { display: flex; gap: 8px; align-items: center; border-radius: 5px; padding: 6px 8px; }
+.card-picker .search-picker-option > span:first-child, .card-picker .search-picker-create > span { flex: 1; overflow-wrap: anywhere; }
+.card-picker .search-picker-option .icon { width: 18px; height: 18px; flex-shrink: 0; }
+.card-picker .search-picker-option kbd { font-size: 12px; }
+.card-route-page .card-picker .search-picker-option[data-highlighted="true"] { background: #d8e6f5; color: #19263e; }
+.card-route-page #card-tags .search-picker-option { color: #2d6eea; }
+.card-picker .search-picker-empty { margin: 5px 8px; color: var(--ink-3); }
+
+/* SearchPicker (ui/public/search-picker.tsx): the panel is spans, so give its parts block layout. */
+.search-picker:popover-open { display: block; }
+.search-picker-heading { display: flex; }
+.search-picker-title { display: block; }
+.search-picker-input { display: block; width: 100%; min-width: 0; box-sizing: border-box; }
+.search-picker-options { display: grid; outline: none; }
+.search-picker-option { display: block; min-width: 0; cursor: default; user-select: none; }
+.search-picker-option[aria-disabled="true"] { opacity: .5; }
+.search-picker-empty { display: block; }
 .card-route-page .perma-draft .perma-actions { gap: 6px; }
 @media (max-width: 799px) {
   .card-route-page .perma-assign { display: inline-grid; }

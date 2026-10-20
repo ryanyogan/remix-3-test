@@ -2,7 +2,7 @@ import { clientEntry, Frame, navigate, on, ref, type Handle } from 'remix/compon
 import type { ActivityEvent, ActivityFilters, ActivityPage, NavigationData } from '@trellix/contracts'
 import { ArrowRightIcon, CircleCheckIcon, CommentIcon } from '../../../ui/public/icons.tsx'
 import { routes } from '../../../routes.ts'
-import { ActivityFilter } from './activity-filter.tsx'
+import { SearchPicker } from '../../../ui/public/search-picker.tsx'
 import { activityDays } from './activity-days.ts'
 import { activityHref } from './activity-urls.ts'
 
@@ -23,15 +23,17 @@ export const ActivityHeading = clientEntry(import.meta.url, function ActivityHea
     let board = navigation.boards.find(b => b.id === filters.board)
     return <div class="activity-heading" aria-busy={pending}>
       <h1>{filters.view === 'pinned' ? 'Pinned card activity' : filters.view === 'added' ? 'Cards added by you' : 'Activity'} across{' '}
-        <button type="button" id="activity-board-trigger" class="inline-filter" aria-label="Filter activity by board" aria-haspopup="dialog" aria-controls="activity-board" popoverTarget="activity-board">{board?.name ?? 'all boards'}</button>{' '}
-        by <button type="button" id="activity-person-trigger" class="inline-filter" aria-label="Filter activity by person" aria-haspopup="dialog" aria-controls="activity-person" popoverTarget="activity-person">{filters.person ? user.name : 'everyone'}</button>
+        <SearchPicker id="activity-board" class="activity-filter-popover" placement="bottom" title="Board…" label="Filter boards"
+          empty={query => query ? 'No boards found.' : 'No boards yet.'}
+          options={[...(filters.board ? [{ value: '', label: 'All boards' }] : []), ...navigation.boards.map(b => ({ value: b.id, label: b.name, selected: b.id === filters.board }))]}
+          onSelect={value => filter('board', value)}
+          trigger={mix => <button type="button" class="inline-filter" aria-label="Filter activity by board" mix={[mix.anchor, mix.trigger]}>{board?.name ?? 'all boards'}</button>} />{' '}
+        by <SearchPicker id="activity-person" class="activity-filter-popover" placement="bottom" title="Person…" label="Filter people"
+          empty={query => query ? 'No people found.' : 'No people yet.'}
+          options={[...(filters.person ? [{ value: '', label: 'Everyone' }] : []), { value: user.id, label: user.name, selected: user.id === filters.person }]}
+          onSelect={value => filter('person', value)}
+          trigger={mix => <button type="button" class="inline-filter" aria-label="Filter activity by person" mix={[mix.anchor, mix.trigger]}>{filters.person ? user.name : 'everyone'}</button>} />
       </h1>
-      <ActivityFilter name="board" value={filters.board ?? ''}
-        options={[...(filters.board ? [{ value: '', label: 'All boards' }] : []), ...navigation.boards.map(b => ({ value: b.id, label: b.name }))]}
-        onSelect={value => filter('board', value)} />
-      <ActivityFilter name="person" value={filters.person ?? ''}
-        options={[...(filters.person ? [{ value: '', label: 'Everyone' }] : []), { value: user.id, label: user.name }]}
-        onSelect={value => filter('person', value)} />
       {error && <p role="alert">{error}</p>}
       {filters.tag && <p class="activity-filter-note">Tagged <strong>#{filters.tag}</strong> <a href={routes.dashboard.index.href()} data-rmx-target="home-activity" data-rmx-src={routes.dashboard.activity.href()}>Clear filter</a></p>}
     </div>

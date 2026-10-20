@@ -1,3 +1,5 @@
+import * as menu from '@remix-run/ui/menu'
+import * as popover from '@remix-run/ui/popover'
 import { on, ref, type Handle, type RemixNode } from 'remix/component'
 import { columnColors, type ColumnColor, type BoardData, type ItemData } from '@trellix/contracts'
 import { appRequest } from '../../public/app-request.ts'
@@ -7,64 +9,84 @@ export function Glyph(handle: Handle<{ name: string }>) {
   return () => <span aria-hidden="true" class="board-glyph" style={{ maskImage: `url('/icons/fizzy/${handle.props.name}.svg')` }} />
 }
 
-// Native popovers escape the horizontally scrolling lanes and provide Escape/light dismissal.
-function place(popup: HTMLElement, anchor: HTMLElement, align: 'start' | 'center') {
-  let rect = anchor.getBoundingClientRect()
-  popup.style.visibility = 'hidden'
-  popup.showPopover()
-  let width = popup.offsetWidth, height = popup.offsetHeight
-  popup.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, align === 'start' ? rect.left : rect.left + rect.width / 2 - width / 2))}px`
-  popup.style.top = `${Math.max(8, Math.min(rect.bottom + 4, innerHeight - height - 8))}px`
-  popup.style.visibility = ''
-}
-export function Popup(handle: Handle<{ label: string; text?: string; icon?: string; className?: string; selected?: boolean; children: RemixNode; align?: 'start' | 'center'; editing?: boolean; onClose?(): void }>) {
-  let popup: HTMLDivElement | undefined, trigger: HTMLButtonElement | undefined
-  let open = false
-  return () => <div class={handle.props.className ?? 'board-quick-filter'}>
-    <button type="button" class="board-popup-trigger" aria-label={handle.props.label} aria-expanded={open} aria-haspopup="dialog" data-selected={handle.props.selected || undefined} mix={[ref(node => { trigger = node }), on('click', () => {
-      if (!popup || !trigger) return
-      if (popup.matches(':popover-open')) popup.hidePopover()
-      else { place(popup, trigger, handle.props.align ?? 'center'); popup.querySelector<HTMLElement>('input, button:not(:disabled), a')?.focus({ preventScroll: true }) }
-    })]}>{handle.props.icon ? <Glyph name={handle.props.icon} /> : <><span>{handle.props.text ?? handle.props.label}</span><Glyph name="chevron-down" /></>}</button>
-    <div class={handle.props.editing ? 'board-popup column-edit-popup' : 'board-popup'} popover="auto" role="dialog" aria-label={handle.props.label} mix={[ref(node => { popup = node }), on('toggle', () => { open = !!popup?.matches(':popover-open'); if (!open) handle.props.onClose?.(); handle.update() }), on('keydown', event => {
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
-      if (event.target instanceof HTMLInputElement) return
-      let controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a, input')]
-      let index = controls.indexOf(document.activeElement as HTMLElement)
-      let next = event.key === 'Home' ? 0 : event.key === 'End' ? controls.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + controls.length) % controls.length
-      event.preventDefault(); controls[next]?.focus()
-    })]}>{handle.props.children}</div>
-  </div>
-}
-export function dismissPopup(event: Event) { (event.currentTarget as HTMLElement).closest<HTMLElement>('[popover]')?.hidePopover() }
-
+// Column options: a popover (anchoring, Escape and outside dismissal, focus return) that switches
+// between the column actions and the edit form.
 export function ColumnMenu(handle: Handle<{ name: string; color: ColumnColor; canLeft: boolean; canRight: boolean; save(name: string, color: ColumnColor): void; move(direction: 'left' | 'right'): void; remove(): void }>) {
-  let editing = false
+  let open = false, editing = false
   let color = handle.props.color
   let draftName = handle.props.name
-  let nameInput: HTMLInputElement | undefined
-  return () => <Popup label={`Column options for ${handle.props.name}`} icon="menu-dots-horizontal" className="lane-menu" align="start" editing={editing} onClose={() => { editing = false; handle.update() }}>
-    {editing ? <form class="column-edit-form" mix={on('submit', event => {
-      event.preventDefault()
-      let name = String(new FormData(event.currentTarget).get('name') ?? '').trim()
-      if (!name) return
-      handle.props.save(name, color); dismissPopup(event); editing = false; handle.update()
-    })}>
-      <input class="input" name="name" aria-label="Column name" value={draftName} maxLength={100} required pattern=".*\S.*" mix={[ref(node => { if (nameInput === node) return; nameInput = node; requestAnimationFrame(() => { if (node.isConnected && node.closest(':popover-open')) { node.focus(); node.select() } }) }), on('input', event => { draftName = event.currentTarget.value })]} />
-      <div class="column-colors" role="radiogroup" aria-label="Column color">
-        {columnColors.map(value => <label class="column-color" title={value[0].toUpperCase() + value.slice(1)} style={{ backgroundColor: `var(--column-${value})` }}>
-          <input type="radio" name="color" value={value} aria-label={value[0].toUpperCase() + value.slice(1)} checked={color === value} mix={on('change', () => { color = value; handle.update() })} />
-          {color === value && <Glyph name="check" />}
-        </label>)}
+  let trigger: HTMLElement | undefined, surface: HTMLElement | undefined, nameInput: HTMLInputElement | undefined
+  async function show() {
+    open = true; editing = false; handle.update()
+    await handle.update()
+    surface?.querySelector<HTMLElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+  }
+  function hide() { open = false; editing = false; handle.update() }
+  async function edit() {
+    draftName = handle.props.name; color = handle.props.color; editing = true
+    await handle.update()
+    nameInput?.focus(); nameInput?.select()
+  }
+  // Return focus before acting, so a dialog the action opens (delete confirmation) restores it
+  // to the trigger rather than to a button in the hidden popover.
+  function act(run: () => void) { hide(); trigger?.focus({ preventScroll: true }); run() }
+  return () => {
+    let label = `Column options for ${handle.props.name}`
+    return <div class="lane-menu"><popover.Context>
+      <button type="button" class="board-popup-trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={open ? 'true' : 'false'}
+        mix={[ref(node => { trigger = node }), popover.anchor({ placement: 'bottom-start', offset: 4 }), popover.focusOnHide(), on('click', () => { void show() })]}><Glyph name="menu-dots-horizontal" /></button>
+      <div class={editing ? 'board-popup column-edit-popup' : 'board-popup'} role="dialog" aria-label={label} mix={[
+        ref(node => { surface = node }),
+        popover.surface({ open, onHide: hide }),
+        on('keydown', event => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
+          if (event.target instanceof HTMLInputElement) return
+          let controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input')]
+          let index = controls.indexOf(document.activeElement as HTMLElement)
+          let next = event.key === 'Home' ? 0 : event.key === 'End' ? controls.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + controls.length) % controls.length
+          event.preventDefault(); controls[next]?.focus()
+        }),
+      ]}>
+        {editing ? <form class="column-edit-form" mix={on('submit', event => {
+          event.preventDefault()
+          let name = String(new FormData(event.currentTarget).get('name') ?? '').trim()
+          if (name) act(() => handle.props.save(name, color))
+        })}>
+          <input class="input" name="name" aria-label="Column name" value={draftName} maxLength={100} required pattern=".*\S.*" mix={[ref(node => { nameInput = node }), on('input', event => { draftName = event.currentTarget.value; handle.update() })]} />
+          <div class="column-colors" role="radiogroup" aria-label="Column color">
+            {columnColors.map(value => <label key={value} class="column-color" title={value[0].toUpperCase() + value.slice(1)} style={{ backgroundColor: `var(--column-${value})` }}>
+              <input type="radio" name="color" value={value} aria-label={value[0].toUpperCase() + value.slice(1)} checked={color === value} mix={on('change', () => { color = value; handle.update() })} />
+              {color === value && <Glyph name="check" />}
+            </label>)}
+          </div>
+          <button type="submit" class="column-save">Save changes</button>
+        </form> : <div class="column-menu-options">
+          <button type="button" class="popup-option" mix={on('click', () => { void edit() })}><Glyph name="pencil" /><span>Edit column</span></button>
+          <button type="button" class="popup-option" disabled={!handle.props.canLeft} mix={on('click', () => act(() => handle.props.move('left')))}><Glyph name="column-left" /><span>Move to the left</span></button>
+          <button type="button" class="popup-option" disabled={!handle.props.canRight} mix={on('click', () => act(() => handle.props.move('right')))}><Glyph name="column-right" /><span>Move to the right</span></button>
+          <button type="button" class="popup-option popup-negative" mix={on('click', () => act(() => handle.props.remove()))}><Glyph name="trash" /><span>Delete column</span></button>
+        </div>}
       </div>
-      <button type="submit" class="column-save">Save changes</button>
-    </form> : <div class="column-menu-options">
-      <button type="button" class="popup-option" mix={on('click', async () => { draftName = handle.props.name; color = handle.props.color; editing = true; await handle.update(); nameInput?.focus(); nameInput?.select() })}><Glyph name="pencil" /><span>Edit column</span></button>
-      <button type="button" class="popup-option" disabled={!handle.props.canLeft} mix={on('click', event => { dismissPopup(event); handle.props.move('left') })}><Glyph name="column-left" /><span>Move to the left</span></button>
-      <button type="button" class="popup-option" disabled={!handle.props.canRight} mix={on('click', event => { dismissPopup(event); handle.props.move('right') })}><Glyph name="column-right" /><span>Move to the right</span></button>
-      <button type="button" class="popup-option popup-negative" mix={on('click', event => { dismissPopup(event); handle.props.remove() })}><Glyph name="trash" /><span>Delete column</span></button>
-    </div>}
-  </Popup>
+    </popover.Context></div>
+  }
+}
+
+// A toolbar dropdown (@remix-run/ui/menu: keyboard navigation, typeahead, checked items, focus
+// return). Choices bubble as MenuSelectEvents to the toolbar's onMenuSelect.
+function FilterMenu(handle: Handle<{ label: string; text?: string; selected?: boolean; note?: RemixNode; children: RemixNode }>) {
+  return () => {
+    let { label, text, selected, note, children } = handle.props
+    return <div class="board-quick-filter"><menu.Context label={label}>
+      <button type="button" class="board-popup-trigger" aria-label={label} data-selected={selected || undefined} mix={menu.trigger({ placement: 'bottom', offset: 4 })}>
+        <span>{text ?? label}</span><Glyph name="chevron-down" />
+      </button>
+      <div class="board-popup" mix={menu.popover()}>
+        <strong class="popup-title" aria-hidden="true">{label}</strong>
+        {note}
+        <div class="board-menu-list" mix={menu.list()}>{children}</div>
+      </div>
+    </menu.Context></div>
+  }
 }
 
 export interface Filters { query: string; sort: string; status: string; tags: string[]; assignee: string; creator: string; closer: string }
@@ -100,27 +122,33 @@ export function BoardFilters(handle: Handle<{ board: BoardData; user: { id: stri
   function choice(label: string, field: 'sort' | 'status' | 'assignee' | 'creator' | 'closer', options: [string, string][], defaultValue = '') {
     let value = handle.props.filters[field]
     let text = value === defaultValue ? label : options.find(([id]) => id === value)?.[1] ?? label
-    return <Popup label={label} text={text} selected={value !== defaultValue && field !== 'sort'}>
-      <strong class="popup-title">{label}</strong>
-      {options.map(([id, name]) => <button type="button" class="popup-option" role="menuitemradio" aria-checked={value === id} mix={on('click', event => { change({ [field]: id }); dismissPopup(event) })}><span>{name}</span>{value === id && <Glyph name="check" />}</button>)}
-    </Popup>
+    return <FilterMenu label={label} text={text} selected={value !== defaultValue && field !== 'sort'}>
+      {options.map(([id, name]) => <div key={id} class="popup-option" mix={menu.item({ name: field, value: id, type: 'radio', checked: value === id, label: name })}><span>{name}</span>{value === id && <Glyph name="check" />}</div>)}
+    </FilterMenu>
+  }
+  function select(event: menu.MenuSelectEvent) {
+    let { name, value } = event.item
+    if (value === null) return
+    if (name === 'board') location.assign(routes.dashboard.boards.show.href({ boardId: value }))
+    else if (name === 'tag') { let tags = handle.props.filters.tags; change({ tags: tags.includes(value) ? tags.filter(tag => tag !== value) : [...tags, value] }) }
+    else change({ [name]: value })
   }
   return () => {
     let { board, user, filters } = handle.props
     let tags = [...new Set(board.items.flatMap(item => item.detail?.tags ?? []))].sort()
     let active = filters.status !== 'all' || filters.tags.length || filters.assignee || filters.creator || filters.closer || filters.query || filters.sort !== 'latest'
-    return <div class="board-toolbar" data-expanded={expanded || undefined}>
+    return <div class="board-toolbar" data-expanded={expanded || undefined} mix={menu.onMenuSelect(select)}>
       <div class="board-filter-pill"><input class="board-search" type="search" placeholder="Filter these cards… [F]" aria-label="Filter cards" value={filters.query} mix={[ref(handle.props.searchRef), on('input', event => change({ query: event.currentTarget.value }))]} />
         {!expanded && <button type="button" aria-label="Card filters" aria-expanded="false" mix={on('click', toggle)}><Glyph name="filter" /></button>}
       </div>
       {expanded && <>
-        <Popup label="Board…"><strong class="popup-title">Board…</strong>{error && <p role="alert">{error}</p>}{boards.map(option => <a class="popup-option" href={routes.dashboard.boards.show.href({ boardId: option.id })} data-rmx-document><span>{option.name}</span>{option.id === board.id && <Glyph name="check" />}</a>)}</Popup>
+        <FilterMenu label="Board…" note={error && <p role="alert">{error}</p>}>{boards.map(option => <div key={option.id} class="popup-option" mix={menu.item({ name: 'board', value: option.id, label: option.name })}><span>{option.name}</span>{option.id === board.id && <Glyph name="check" />}</div>)}</FilterMenu>
         {choice('Recently updated', 'sort', [['latest','Recently updated'],['newest','Newest to oldest'],['oldest','Oldest to newest']], 'latest')}
         {choice('Status…', 'status', [['all','All'],['open','Open'],['closed','Closed'],['not_now','Not now'],['pinned','Pinned'],['urgent','Urgent'],['snoozed','Snoozed']], 'all')}
-        <Popup label="Tagged…" text={filters.tags.length ? filters.tags.map(tag => `#${tag}`).join(', ') : 'Tagged…'} selected={!!filters.tags.length}>
-          <strong class="popup-title">Tagged…</strong>{!tags.length && <p class="popup-empty">No tags on this board yet.</p>}
-          {tags.map(tag => <button type="button" class="popup-option" role="menuitemcheckbox" aria-checked={filters.tags.includes(tag)} mix={on('click', event => { change({ tags: filters.tags.includes(tag) ? filters.tags.filter(value => value !== tag) : [...filters.tags, tag] }); dismissPopup(event) })}><span>#{tag}</span>{filters.tags.includes(tag) && <Glyph name="check" />}</button>)}
-        </Popup>
+        <FilterMenu label="Tagged…" text={filters.tags.length ? filters.tags.map(tag => `#${tag}`).join(', ') : 'Tagged…'} selected={!!filters.tags.length}
+          note={!tags.length && <p class="popup-empty">No tags on this board yet.</p>}>
+          {tags.map(tag => <div key={tag} class="popup-option" mix={menu.item({ name: 'tag', value: tag, type: 'checkbox', checked: filters.tags.includes(tag), label: `#${tag}` })}><span>#{tag}</span>{filters.tags.includes(tag) && <Glyph name="check" />}</div>)}
+        </FilterMenu>
         {choice('Assigned to…','assignee',[['','Anyone'],['unassigned','No one'],[user.id,user.name]])}
         {choice('Added by…','creator',[['','Anyone'],[user.id,user.name]])}
         {choice('Closed by…','closer',[['','Anyone'],[user.id,user.name]])}

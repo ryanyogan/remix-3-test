@@ -2,11 +2,11 @@ import { clientEntry, on, ref, unsafeHTML, type Handle } from 'remix/component'
 import type { BoardData, CardDetailData, NavigationData } from '@trellix/contracts'
 import { routes } from '../../../../routes.ts'
 import { limits } from '../../../../data/limits.ts'
-import { ArrowRightIcon, ChevronDownIcon, PinIcon, PlusIcon, XIcon, PaperclipIcon } from '../../../../ui/public/icons.tsx'
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, PinIcon, PlusIcon, XIcon, PaperclipIcon } from '../../../../ui/public/icons.tsx'
 import { appRequest } from '../../public/app-request.ts'
 import { isTyping } from '../../public/navigation.tsx'
 import { RichEditor, plainHtml } from './rich-editor.tsx'
-import { CardPicker } from './card-picker.tsx'
+import { SearchPicker } from '../../../../ui/public/search-picker.tsx'
 import { TagIcon, ImageIcon, RemoveImageIcon, AssignIcon } from './card-icons.tsx'
 
 function TicketIcon() { return () => <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4Z" fill="currentColor" stroke="none"/><path d="m12 6 1.7 4.1 4.3.4-3.3 2.8 1 4.2-3.7-2.3-3.7 2.3 1-4.2L6 10.5l4.3-.4Z" fill="var(--surface)" stroke="none"/></svg> }
@@ -124,7 +124,7 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     if (detail) await change(routes.dashboard.cards.update.href(params()), { assigneeId: next })
     else { assigneeId = next; handle.update() }
   }
-  function openPicker(id: string) { document.getElementById(id)?.showPopover() }
+  function openPicker(id: string) { document.getElementById(`${id}-trigger`)?.click() }
   handle.signal.addEventListener('abort', () => { if (coverPreview) URL.revokeObjectURL(coverPreview) }, { once: true })
   function toggleDone() {
     if (!detail || !board || board.columns.length < 2) return
@@ -171,13 +171,18 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
             <article class="perma-paper">
               {cover && <img class="perma-background" src={cover} alt="" />}
               <header class="perma-header">
-                <div class="perma-board-tab"><span class="perma-number">{detail ? <><span>No.</span> {detail.id.slice(0, 6).toUpperCase()}</> : 'New card'}</span>
-                  <button class="perma-board-name" type="button" id="card-board-trigger" popoverTarget="card-board" aria-label="Card board" aria-haspopup="dialog" aria-expanded="false" disabled={busy || created}>{board.name}<ChevronDownIcon /></button>
-                </div>
-                <button class="perma-circle perma-tag-button" type="button" id="card-tags-trigger" aria-label="Edit tags" popoverTarget="card-tags" aria-haspopup="dialog" aria-expanded="false" disabled={busy}><TagIcon /></button>
+                <SearchPicker id="card-board" class="card-picker" title="Move this card to…" label="Filter boards" busy={busy}
+                  options={boards.map(b => ({ value: b.id, label: b.name, selected: b.id === board!.id, detail: b.id === board!.id ? <CheckIcon /> : null }))}
+                  onSelect={id => { void selectBoard(id) }}
+                  trigger={mix => <div class="perma-board-tab" mix={mix.anchor}><span class="perma-number">{detail ? <><span>No.</span> {detail.id.slice(0, 6).toUpperCase()}</> : 'New card'}</span>
+                    <button class="perma-board-name" type="button" id="card-board-trigger" aria-label="Card board" disabled={busy || created} mix={mix.trigger}>{board!.name}<ChevronDownIcon /></button>
+                  </div>} />
+                <SearchPicker id="card-tags" class="card-picker" title="Tag this…" shortcut="T" label="Add tag" placeholder="Add a new tag or filter…" busy={busy} multiple
+                  options={[...new Set([...selectedTags, ...handle.props.tags])].map(t => ({ value: t, label: `#${t}`, selected: selectedTags.includes(t), detail: selectedTags.includes(t) ? <CheckIcon /> : null }))}
+                  onSelect={value => { void tag(value) }}
+                  create={{ label: 'Create tag', onCreate: value => { if (!selectedTags.includes(value.toLowerCase())) void tag(value) } }}
+                  trigger={mix => <button class="perma-circle perma-tag-button" type="button" id="card-tags-trigger" aria-label="Edit tags" disabled={busy} mix={[mix.anchor, mix.trigger]}><TagIcon /></button>} />
                 {selectedTags.map(tag => <span class="perma-tag" key={tag}>#{tag}</span>)}
-                <CardPicker id="card-board" title="Move this card to…" label="Filter boards" busy={busy} options={boards.map(b => ({ value: b.id, label: b.name, selected: b.id === board!.id }))} onSelect={id => { void selectBoard(id) }} />
-                <CardPicker id="card-tags" title="Tag this…" shortcut="T" label="Add tag" placeholder="Add a new tag or filter…" busy={busy} options={[...new Set([...selectedTags, ...handle.props.tags])].map(t => ({ value: t, label: `#${t}`, selected: selectedTags.includes(t) }))} onSelect={value => { void tag(value) }} onCreate={value => { if (!selectedTags.includes(value.toLowerCase())) void tag(value) }} />
               </header>
               <div class="perma-body">
                 <div class="perma-content">
@@ -202,8 +207,10 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
               <footer class="perma-meta">
                 <span class="perma-avatar" aria-hidden="true">{initials(detail?.author ?? user.name)}</span>
                 <div class="perma-meta-grid"><span>{detail ? 'Added' : 'Drafted'} <strong>{detail ? age(detail.created_at) : 'today'}</strong></span><span><RefreshIcon />Updated <strong>{detail ? age(detail.updated_at) : 'today'}</strong></span><span>By <strong>{detail?.author ?? user.name}</strong></span><span>{assigned ? <>Assigned to <strong>{user.name}</strong></> : 'Not assigned'}</span></div>
-                <button class="perma-circle perma-assign" type="button" id="card-assign-trigger" popoverTarget="card-assign" disabled={busy} aria-label="Assign someone" aria-haspopup="dialog" aria-expanded="false"><AssignIcon /></button>
-                <CardPicker id="card-assign" title="Assign this to…" shortcut="A" label="Filter people" busy={busy} options={[{ value: user.id, label: 'Me', search: user.name, selected: !!assigned, shortcut: 'M' }]} onSelect={() => { void assign() }} />
+                <SearchPicker id="card-assign" class="card-picker" title="Assign this to…" shortcut="A" label="Filter people" busy={busy}
+                  options={[{ value: user.id, label: 'Me', search: user.name, selected: !!assigned, detail: assigned ? <CheckIcon /> : <kbd>M</kbd> }]}
+                  onSelect={() => { void assign() }}
+                  trigger={mix => <button class="perma-circle perma-assign" type="button" id="card-assign-trigger" disabled={busy} aria-label="Assign someone" mix={[mix.anchor, mix.trigger]}><AssignIcon /></button>} />
                 {detail && <button class="perma-circle perma-reaction" type="button" disabled title="Reactions are not available yet" aria-label="Add a reaction (not available yet)">🚀</button>}
               </footer>
             </article>

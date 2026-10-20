@@ -39,7 +39,8 @@ export const Board = clientEntry(
   function Board(handle: Handle<{ board: BoardData; columnId?: string; user: { id: string; name: string } }>) {
     let refreshed: BoardData | undefined
     let refreshVersion = 0
-    let store = new BoardStore(handle.props.board.id, async () => {
+    let store = new BoardStore(handle.props.board.id, refresh)
+    async function refresh() {
       let version = ++refreshVersion
       try {
         let board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: handle.props.board.id }))
@@ -48,7 +49,7 @@ export const Board = clientEntry(
         store.reloaded()
         handle.update()
       } catch { store.reject('Could not refresh the board. Reload the page to see the latest changes.') }
-    })
+    }
     let watching = handle.props.board.watching !== false
     let watchPending = false
     let notNowCreation: Promise<string> | undefined
@@ -909,95 +910,6 @@ function NewColumn(handle: Handle<NewColumnProps>) {
   }
 }
 
-interface EditableTextProps {
-  value: string
-  displayLabel?: string
-  // Where the field posts without JavaScript, plus any fields the action needs.
-  action: string
-  hidden?: Record<string, string>
-  inputLabel: string
-  buttonLabel: string
-  onSave: (value: string) => void
-}
-
-// A heading that turns into an input on click. Enter or clicking away saves, Escape cancels.
-function EditableText(handle: Handle<EditableTextProps>) {
-  let editing = false
-  let button: HTMLButtonElement | undefined
-
-  async function finish(save: string | null) {
-    if (!editing) return
-    editing = false
-    let value = save?.trim()
-    if (value && value !== handle.props.value) handle.props.onSave(value)
-    await handle.update()
-    button?.focus()
-  }
-
-  return () => {
-    let { value, action, hidden = {}, inputLabel, buttonLabel } = handle.props
-
-    if (!editing) {
-      return (
-        <button
-          type="button"
-          aria-label={buttonLabel}
-          mix={[
-            editableButtonStyle,
-            ref((node) => (button = node)),
-            on('click', async () => {
-              editing = true
-              await handle.update()
-            }),
-          ]}
-        >
-          {handle.props.displayLabel ?? value}
-        </button>
-      )
-    }
-
-    return (
-      <form
-        method="post"
-        action={action}
-        mix={[
-          on('submit', (event) => {
-            event.preventDefault()
-            let input = event.currentTarget.elements.namedItem('name') as HTMLInputElement
-            finish(input.value)
-          }),
-          ref((form, signal) =>
-            dismissOnOutside(form, signal, () => {
-              let input = form.elements.namedItem('name') as HTMLInputElement
-              finish(input.value)
-            }),
-          ),
-        ]}
-      >
-        {Object.entries(hidden).map(([name, hiddenValue]) => (
-          <input key={name} type="hidden" name={name} value={hiddenValue} />
-        ))}
-        <input
-          name="name"
-          required
-          maxLength={limits.name}
-          defaultValue={value}
-          aria-label={inputLabel}
-          autoComplete="off"
-          class="field"
-          mix={[
-            editableInputStyle,
-            ref((node) => node.select()),
-            on('keydown', (event) => {
-              if (event.key === 'Escape') finish(null)
-            }),
-          ]}
-        />
-      </form>
-    )
-  }
-}
-
 // Calls onDismiss when the user presses or focuses something outside `container`. Focus that is
 // only dropped to <body> is put back instead: a page reload in place can move the DOM around a
 // focused field (Remix re-places the app shell when extensions have injected nodes into
@@ -1124,30 +1036,6 @@ const previewImageStyle = css({
   maxHeight: 'calc(92vh - var(--s7))',
   objectFit: 'contain',
   margin: '0 auto',
-})
-
-const editableButtonStyle = css({
-  display: 'block',
-  margin: 0,
-  padding: '0 var(--s1)',
-  marginLeft: 'calc(var(--s1) * -1)',
-  border: 0,
-  borderRadius: 'var(--r-sm)',
-  background: 'transparent',
-  color: 'inherit',
-  font: 'inherit',
-  letterSpacing: 'inherit',
-  textAlign: 'left',
-  overflowWrap: 'anywhere',
-  cursor: 'text',
-  '&:hover': { background: 'color-mix(in oklab, var(--ink) 7%, transparent)' },
-})
-
-const editableInputStyle = css({
-  font: 'inherit',
-  letterSpacing: 'inherit',
-  padding: '0 var(--s2)',
-  minHeight: 0,
 })
 
 export function BoardGlyph(handle: Handle<{ name: string }>) {
