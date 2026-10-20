@@ -1,5 +1,5 @@
 import * as assert from 'remix/assert'
-import { DataTableValidationError } from 'remix/data-table'
+import { DataTableValidationError, sql } from 'remix/data-table'
 import { describe, it } from 'remix/test'
 
 import { boardColumns, boardItemFiles, boardItems, boards } from '../../../data/tables.ts'
@@ -28,8 +28,8 @@ function post(
   })
 }
 
-async function setup() {
-  let { db, router, uploads } = await createTestRouter()
+async function setup(database: 'sqlite' | 'd1' = 'sqlite') {
+  let { db, router, uploads } = await createTestRouter(database)
   let cookie = await signUp(router)
 
   let response = await router.fetch(
@@ -309,8 +309,8 @@ function upload(href: string, cookie: string, file: File, id?: string) {
   })
 }
 
-async function setupCard() {
-  let context = await setup()
+async function setupCard(database: 'sqlite' | 'd1' = 'sqlite') {
+  let context = await setup(database)
   let { router, cookie, board, columns } = context
   await router.fetch(
     post(
@@ -474,6 +474,19 @@ describe('card attachments', () => {
     assert.match((await full.json()).error, /up to 10 files/)
     assert.equal((await db.findMany(boardItemFiles)).length, limits.filesPerCard)
   })
+
+  for (let database of ['sqlite', 'd1'] as const) {
+    it(`leaves no stored bytes when the file row fails to commit (${database})`, async () => {
+      let { db, router, uploads, cookie, uploadHref } = await setupCard(database)
+      // D1 commits queued writes after the transaction callback, so this fails after the
+      // bytes were stored.
+      await db.exec(sql`create trigger reject_files before insert on board_item_files
+        begin select raise(abort, 'rejected'); end`)
+
+      await assert.rejects(router.fetch(upload(uploadHref, cookie, new File(['x'], 'x.txt'), 'file-1')), /rejected|execution failed/)
+      assert.equal(await uploads.has('file-1'), false)
+    })
+  }
 })
 
 describe('validation', () => {

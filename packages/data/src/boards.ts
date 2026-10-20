@@ -109,19 +109,28 @@ export async function attachFile(
 
   let { file } = values
   let name = file.name.trim().slice(0, limits.fileName) || 'file'
-  // Validate the row before writing bytes, so a rejected upload leaves nothing behind.
-  await db.transaction(async (tx) => {
-    await tx.create(boardItemFiles, {
-      id: values.id,
-      board_id: boardId,
-      item_id: item.id,
-      name,
-      type: file.type || 'application/octet-stream',
-      size: file.size,
-      created_at: Date.now(),
+  // Validate the row before writing bytes, so a rejected upload leaves nothing behind. D1 only
+  // queues the insert and commits it after the callback, so a failed commit must also remove
+  // the bytes already stored.
+  let stored = false
+  try {
+    await db.transaction(async (tx) => {
+      await tx.create(boardItemFiles, {
+        id: values.id,
+        board_id: boardId,
+        item_id: item.id,
+        name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        created_at: Date.now(),
+      })
+      await storage.set(values.id, file)
+      stored = true
     })
-    await storage.set(values.id, file)
-  })
+  } catch (error) {
+    if (stored) await storage.remove(values.id)
+    throw error
+  }
   return 'attached'
 }
 
