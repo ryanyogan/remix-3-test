@@ -1,3 +1,4 @@
+import { revokeSessions } from '@trellix/data/sessions'
 import { redirect } from 'remix/response/redirect'
 import { createController } from 'remix/router'
 
@@ -31,7 +32,10 @@ export default createController(routes, {
         headers,
       })
     },
-    logout(context) {
+    // Signing out revokes every session for the user, not only this cookie: cookie sessions
+    // hold their own state, so destroying this one would leave copies of it valid.
+    async logout(context) {
+      if (context.auth.ok) await revokeSessions(context.db, context.auth.identity.id)
       context.session.destroy()
       return redirect(routes.login.index.href(), 303)
     },

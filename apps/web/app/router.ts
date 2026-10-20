@@ -1,5 +1,5 @@
 import type { Cookie } from 'remix/cookie'
-import { sessionCookie as signedSessionCookie } from '@trellix/session'
+import { sessionCookie as signedSessionCookie, type SessionAuth } from '@trellix/session'
 import type { Database } from 'remix/data-table'
 import type { FileStorage } from 'remix/file-storage'
 import { auth, createSessionAuthScheme } from 'remix/middleware/auth'
@@ -51,14 +51,15 @@ export function createAppRouter(options: AppRouterOptions = {}) {
       parseFormData(),
       auth({
         schemes: [
-          createSessionAuthScheme<User, { userId: string }>({
+          createSessionAuthScheme<User, SessionAuth>({
             read(session) {
-              return session.get('auth') as { userId: string } | null
+              return session.get('auth') as SessionAuth | null
             },
-            async verify({ userId }) {
+            // A session issued before the user's last sign out carries an older version.
+            async verify({ userId, version = 0 }) {
               let user = await db.find(users, userId)
-              if (user === null) return null
-              let { password_hash: _, ...identity } = user
+              if (user === null || user.session_version !== version) return null
+              let { password_hash: _, session_version: __, ...identity } = user
               return identity
             },
             invalidate(session) {

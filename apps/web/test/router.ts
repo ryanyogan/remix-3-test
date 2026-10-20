@@ -5,7 +5,7 @@ import * as assert from 'remix/assert'
 import { createCookie } from 'remix/cookie'
 import { createSqliteDatabase } from 'remix/data-table/sqlite'
 import { createMemoryFileStorage } from 'remix/file-storage/memory'
-import { createMemorySessionStorage } from 'remix/session-storage/memory'
+import { createCookieSessionStorage } from 'remix/session-storage/cookie'
 
 import { migrateDatabase } from '../app/db.ts'
 import { createAppRouter } from '../app/router.ts'
@@ -13,7 +13,8 @@ import { routes } from '../app/routes.ts'
 
 export const origin = 'http://localhost'
 
-// A router backed by a fresh, migrated in-memory database, memory sessions, and memory uploads.
+// A router backed by a fresh, migrated in-memory database, memory uploads, and cookie sessions
+// as in production, so a replayed cookie behaves as it would for a real visitor.
 export async function createTestRouter(database: 'sqlite' | 'd1' = 'sqlite') {
   let sqlite = new DatabaseSync(':memory:')
   sqlite.exec('pragma foreign_keys = on')
@@ -26,7 +27,7 @@ export async function createTestRouter(database: 'sqlite' | 'd1' = 'sqlite') {
     db,
     uploads,
     sessionCookie: createCookie('session', { secrets: ['test-secret'] }),
-    sessionStorage: createMemorySessionStorage(),
+    sessionStorage: createCookieSessionStorage(),
   })
 
   return { db, router, uploads }

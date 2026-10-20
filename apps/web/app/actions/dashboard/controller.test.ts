@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { routes } from '../../routes.ts'
-import { createTestRouter, origin, signUp } from '../../../test/router.ts'
+import { createTestRouter, getResponseCookie, origin, signUp } from '../../../test/router.ts'
 
 function get(href: string, cookie?: string) {
   return new Request(new URL(href, origin), { headers: cookie ? { Origin: origin, Cookie: cookie } : undefined })
@@ -99,5 +99,24 @@ describe('dashboard', () => {
 
     let dashboard = await router.fetch(get(routes.dashboard.index.href(), cookie))
     assert.equal(dashboard.status, 303)
+  })
+
+  it('revokes copies of the session and other sign-ins when logging out', async () => {
+    let { router } = await createTestRouter()
+    let cookie = await signUp(router)
+    let login = new FormData()
+    login.set('email', 'ada@example.com')
+    login.set('password', 'correct horse')
+    let other = getResponseCookie(await router.fetch(new Request(new URL(routes.login.action.href(), origin), { method: 'POST', body: login })), 'session')
+
+    await router.fetch(new Request(new URL(routes.logout.href(), origin), { method: 'POST', headers: { Origin: origin, Cookie: cookie } }))
+
+    // Cookie sessions keep their own state, so the cookie sent before logout is still well
+    // signed; the bumped session version is what rejects it.
+    assert.equal((await router.fetch(get(routes.dashboard.index.href(), cookie))).status, 303)
+    assert.equal((await router.fetch(get(routes.dashboard.index.href(), other))).status, 303)
+
+    let again = getResponseCookie(await router.fetch(new Request(new URL(routes.login.action.href(), origin), { method: 'POST', body: login })), 'session')
+    assert.equal((await router.fetch(get(routes.dashboard.index.href(), again))).status, 200)
   })
 })

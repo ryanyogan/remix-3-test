@@ -11,13 +11,14 @@ export const users = table({
     name: c.text(),
     password_hash: c.text(),
     created_at: c.integer(),
+    session_version: c.integer().default(0),
   },
 })
 
 export type UserRow = TableRow<typeof users>
 
-// The identity exposed to requests; never carries the password hash.
-export type User = Omit<UserRow, 'password_hash'>
+// The identity exposed to requests; never carries the password hash or session version.
+export type User = Omit<UserRow, 'password_hash' | 'session_version'>
 
 // Table hooks enforce the rules every write must follow, whatever the caller: request
 // schemas shape one form's input, these guard the table. Write payloads are partial, so a

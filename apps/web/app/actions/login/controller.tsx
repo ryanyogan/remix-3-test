@@ -1,3 +1,4 @@
+import type { SessionAuth } from '@trellix/session'
 import { completeAuth } from 'remix/auth'
 import * as s from 'remix/data-schema'
 import { redirect } from 'remix/response/redirect'
@@ -50,7 +51,7 @@ export default createController(routes.login, {
       }
 
       let session = completeAuth(context)
-      session.set('auth', { userId: user.id })
+      session.set('auth', { userId: user.id, version: user.session_version } satisfies SessionAuth)
 
       return redirect(routes.dashboard.index.href(), 303)
     },

@@ -21,6 +21,7 @@ type Env = {
     db: Database
     uploads: FileStorage
     sessionUserId: string | null
+    sessionVersion?: number
     browserOrigin?: string
   }
   Variables: { user: User; board: Board; card: BoardItem; tokenAuth: boolean }
@@ -86,6 +87,7 @@ export function createApi() {
       left join board_items i on i.board_id = b.id and i.id = ${cardId}
       where u.id = case when ${hash} != ''
         then (select user_id from api_tokens where token_hash = ${hash}) else ${userId} end
+        and (${hash} != '' or u.session_version = ${c.env.sessionVersion ?? 0})
     `)
     let row = lookup.rows?.[0]
     if (!row)

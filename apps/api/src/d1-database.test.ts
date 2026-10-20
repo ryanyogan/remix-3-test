@@ -14,7 +14,7 @@ function createFakeD1(): D1Like {
   sqlite.exec('pragma foreign_keys = on')
   sqlite.exec(`
     create table users (id text primary key, email text not null unique, name text not null,
-      password_hash text not null, created_at integer not null);
+      password_hash text not null, created_at integer not null, session_version integer not null default 0);
     create table boards (id text primary key, user_id text not null references users(id),
       name text not null, color text not null, created_at integer not null);
   `)
