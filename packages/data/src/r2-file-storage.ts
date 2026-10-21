@@ -1,8 +1,9 @@
 import type { FileLike, FileStorage, ListOptions, ListResult } from 'remix/file-storage'
+import { LazyFile } from 'remix/lazy-file'
 
 // The slice of the Workers R2 binding this storage uses, so it typechecks without Workers types.
 export interface R2Like {
-  get(key: string): Promise<R2ObjectBodyLike | null>
+  get(key: string, options?: { range: { offset: number; length: number } }): Promise<R2ObjectBodyLike | null>
   head(key: string): Promise<R2ObjectLike | null>
   put(
     key: string,
@@ -27,7 +28,7 @@ interface R2ObjectLike {
 }
 
 interface R2ObjectBodyLike extends R2ObjectLike {
-  arrayBuffer(): Promise<ArrayBuffer>
+  body: ReadableStream<Uint8Array<ArrayBuffer>>
 }
 
 // Stores files in an R2 bucket, keeping each file's name and lastModified as custom metadata.
@@ -42,11 +43,26 @@ export function createR2FileStorage(bucket: R2Like): FileStorage<File> {
   }
 
   return {
+    // Reads only the metadata; the bytes stream from R2 when the file is read, a range at a time
+    // for partial downloads, so a download never holds the whole file in the isolate's memory.
     async get(key) {
-      let object = await bucket.get(key)
+      let object = await bucket.head(key)
       if (!object) return null
       let { name, type, lastModified } = metadata(object)
-      return new File([await object.arrayBuffer()], name, { type, lastModified })
+      let content = {
+        byteLength: object.size,
+        stream(start = 0, end = object.size) {
+          let { readable, writable } = new TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>()
+          let range = { offset: start, length: Math.max(0, end - start) }
+          if (range.length === 0) void writable.close()
+          else bucket.get(key, { range }).then(
+            (body) => body ? body.body.pipeTo(writable) : writable.abort(new Error(`File ${key} is gone`)),
+            (error) => writable.abort(error),
+          ).catch(() => {})
+          return readable
+        },
+      }
+      return new LazyFile(content, name, { type, lastModified })
     },
     async has(key) {
       return (await bucket.head(key)) !== null
