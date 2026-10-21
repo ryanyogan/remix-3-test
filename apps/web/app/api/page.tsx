@@ -1,5 +1,6 @@
 import type { Handle } from 'remix/component'
 import { Document } from '../actions/document.tsx'
+import type { Theme } from '../ui/theme.ts'
 
 const endpoints = [
   ['GET', '/workspace', 'Board summaries, three previews per board, 24 recent cards, and 12 pinned cards'],
@@ -20,8 +21,8 @@ const endpoints = [
   ['GET / POST / DELETE', '/tokens or /tokens/:tokenId', 'Manage tokens from a same-origin signed-in browser'],
 ]
 
-export function ApiPage(_handle: Handle) {
-  return () => <Document title="API guide · Trellix"><main class="page" style={{ maxWidth: '1000px', margin: '0 auto' }}>
+export function ApiPage(handle: Handle<{ theme?: Theme }>) {
+  return () => <Document title="API guide · Trellix" theme={handle.props.theme}><main class="page" style={{ maxWidth: '1000px', margin: '0 auto' }}>
     <a href="/dashboard/account">← Account & access tokens</a>
     <p class="eyebrow">Trellix / API v1</p><h1 class="page-title">A small API.<br />A lot of possibilities.</h1>
     <p>Create boards, move cards, add steps, and connect your own tools. JSON over HTTP, served by an independent Hono API Worker.</p>
@@ -34,7 +35,7 @@ export function ApiPage(_handle: Handle) {
       <p><code>priority</code>: normal, high, or urgent. <code>snoozedUntil</code>: Unix milliseconds, or 0 to wake the card. <code>position</code>: a finite number for ordering within a column.</p>
     </section>
     <section class="panel token-panel"><h2>Endpoints</h2><p>All paths start with <code>/api/v1</code>.</p>
-      <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}><thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead><tbody>{endpoints.map(([method, path, description]) => <tr><td style={{ padding: '14px 8px', borderTop: '1px solid var(--line)' }}><code>{method}</code></td><td style={{ padding: '14px 8px', borderTop: '1px solid var(--line)' }}><code>{path}</code></td><td style={{ padding: '14px 8px', borderTop: '1px solid var(--line)' }}>{description}</td></tr>)}</tbody></table></div>
+      <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}><thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead><tbody>{endpoints.map(([method, path, description]) => <tr key={`${method} ${path}`}><td style={{ padding: '14px 8px', borderTop: '1px solid var(--line)' }}><code>{method}</code></td><td style={{ padding: '14px 8px', borderTop: '1px solid var(--line)' }}><code>{path}</code></td><td style={{ padding: '14px 8px', borderTop: '1px solid var(--line)' }}>{description}</td></tr>)}</tbody></table></div>
     </section>
     <section class="panel token-panel"><h2>Responses & limits</h2><p>Reads return <code>{'{ "data": … }'}</code>. Creation returns 201; updates and deletes return 204. Errors use <code>{'{ "error": "message" }'}</code>: 400 malformed JSON, 401 unauthenticated, 403 forbidden, 404 missing, 413 too large, 415 incorrect content type, or 422 invalid fields.</p>
       <p>JSON bodies are limited to 64 KB; multipart file uploads to 10 MB. Cards allow 12 tags, 200 steps, and 20,000 characters of description. Card detail returns the latest 100 comments. Search uses stable creation-time/ID cursors, newest first. Responses are private and never stored by shared caches. Server-Timing reports API duration.</p>

@@ -3,6 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { createTestRouter, origin, signUp } from '../../test/router.ts'
 import { routes } from '../routes.ts'
+import { themeCookie } from '../ui/theme.ts'
 
 describe('root controller', () => {
   it('GET / sends anonymous visitors to login', async () => {
@@ -22,5 +23,15 @@ describe('root controller', () => {
 
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), routes.dashboard.index.href())
+  })
+
+  it('GET /api uses the saved theme', async () => {
+    let { router } = await createTestRouter()
+    let response = await router.fetch(
+      new Request(new URL(routes.apiGuide.href(), origin), { headers: { Cookie: await themeCookie.serialize('dark') } }),
+    )
+
+    assert.equal(response.status, 200)
+    assert.match(await response.text(), /<html lang="en" data-theme="dark"/)
   })
 })

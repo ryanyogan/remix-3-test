@@ -386,13 +386,15 @@ export async function setCardCover(services: CardServices, form: FormData) {
   if (!valid) throw new OperationError(422, { message: 'Choose a PNG, JPEG, or WebP image' })
   let card = await loadCard(services.db, services.board.id, services.card.id)
   let id = crypto.randomUUID()
-  if (
-    (await attachFile(services.db, services.uploads, services.board.id, services.card.id, {
-      id,
-      file,
-    })) !== 'attached'
-  )
-    throw new OperationError(422, { message: 'This card cannot accept another file' })
+  let result = await attachFile(services.db, services.uploads, services.board.id, services.card.id, {
+    id,
+    file,
+  })
+  if (result === 'missing') throw new OperationError(404, { message: 'Card not found' })
+  if (result === 'full')
+    throw new OperationError(422, {
+      message: `A card can hold up to ${limits.filesPerCard} files`,
+    })
   await services.db
     .exec(sql`insert into card_details(item_id, cover_file_id, updated_at) values (${services.card.id}, ${id}, ${Date.now()})
       on conflict(item_id) do update set cover_file_id = excluded.cover_file_id, updated_at = excluded.updated_at`)

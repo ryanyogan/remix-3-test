@@ -665,7 +665,7 @@ function Card(handle: Handle<CardProps>) {
               {!!item.detail?.comments && <span title={`${item.detail.comments} comments`}><BoardGlyph name="comment" />{item.detail.comments}</span>}
             </div>
           </footer>
-          {!!item.detail?.tags.length && <div class="card-signals">{item.detail.tags.map(tag => <span class="card-tag">#{tag}</span>)}</div>}
+          {!!item.detail?.tags.length && <div class="card-signals">{item.detail.tags.map(tag => <span key={tag} class="card-tag">#{tag}</span>)}</div>}
           {item.files.length > 0 && (
             <ul mix={fileListStyle}>
               {item.files.map((file) => (

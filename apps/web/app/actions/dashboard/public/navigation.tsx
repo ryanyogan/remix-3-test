@@ -110,13 +110,13 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
           {error && <p class="jump-message" role="alert">{error} <button type="button" mix={on('click', () => { void load() })}>Try again</button></p>}
           {(boards.length > 0 || matches('Add a board') || matches('All boards')) && <details class="jump-section" open><summary>Boards</summary><div>
             {matches('Add a board') && <a href={routes.dashboard.boards.new.href()} data-jump-link><PlusIcon />Add a board</a>}
-            {boards.map(board => <a href={routes.dashboard.boards.show.href({ boardId: board.id })} data-jump-link><BoardIcon />{board.name}</a>)}
+            {boards.map(board => <a key={board.id} href={routes.dashboard.boards.show.href({ boardId: board.id })} data-jump-link><BoardIcon />{board.name}</a>)}
             {matches('All boards') && <a href={routes.dashboard.boards.index.href()} data-jump-link><BoardIcon />All boards</a>}
           </div></details>}
-          {!!tags.length && <details class="jump-section" open><summary>Tags</summary><div>{tags.map(tag => <a href={`${routes.dashboard.index.href()}?tag=${encodeURIComponent(tag)}`} data-jump-link><TagIcon />{tag}</a>)}</div></details>}
+          {!!tags.length && <details class="jump-section" open><summary>Tags</summary><div>{tags.map(tag => <a key={tag} href={`${routes.dashboard.index.href()}?tag=${encodeURIComponent(tag)}`} data-jump-link><TagIcon />{tag}</a>)}</div></details>}
           {matches(user.name) && <details class="jump-section" open><summary>People</summary><div><a href={`${routes.dashboard.index.href()}?person=${encodeURIComponent(user.id)}`} data-jump-link><UserIcon />{user.name}</a></div></details>}
           {(settings.length > 0 || matches('Sign out')) && <details class="jump-section" open><summary>Settings</summary><div>
-            {settings.map(item => <a href={item.href} data-jump-link><item.icon />{item.label}</a>)}
+            {settings.map(item => <a key={item.href} href={item.href} data-jump-link><item.icon />{item.label}</a>)}
             {!term && <div class="jump-theme"><ThemeToggle theme={theme} /><span>Appearance</span></div>}
             {matches('Sign out') && <form action={routes.logout.href()} method="post" data-rmx-document><button type="submit"><LogOutIcon />Sign out</button></form>}
           </div></details>}

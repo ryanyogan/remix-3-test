@@ -12,10 +12,14 @@ import { MoonIcon, SunIcon } from './icons.tsx'
 export const ThemeToggle = clientEntry(
   import.meta.url,
   function ThemeToggle(handle: Handle<{ theme?: Theme }>) {
-    // With no saved theme the page follows the OS, which only the browser can see.
-    let dark = handle.props.theme
-      ? handle.props.theme === 'dark'
-      : typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+    let dark = handle.props.theme === 'dark'
+    // With no saved theme the page follows the OS, which only the browser can see. Read it after
+    // hydration so the first render matches the server's.
+    if (!handle.props.theme) handle.queueTask(() => {
+      if (!window.matchMedia('(prefers-color-scheme: dark)').matches) return
+      dark = true
+      handle.update()
+    })
 
     async function setDark(next: boolean) {
       dark = next

@@ -5,11 +5,11 @@ import { createController } from 'remix/router'
 import { ApiPage } from '../api/page.tsx'
 import { assets } from '../assets.ts'
 import { routes } from '../routes.ts'
-import { isTheme, themeCookie } from '../ui/theme.ts'
+import { isTheme, readTheme, themeCookie } from '../ui/theme.ts'
 
 export default createController(routes, {
   actions: {
-    apiGuide(context) { return context.render(<ApiPage />) },
+    async apiGuide(context) { return context.render(<ApiPage theme={await readTheme(context.request)} />) },
     async assets(context) {
       return (await assets.fetch(context.request)) ?? new Response('Not Found', { status: 404 })
     },

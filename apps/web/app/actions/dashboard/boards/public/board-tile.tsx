@@ -15,7 +15,7 @@ export const BoardTile = clientEntry(import.meta.url, function BoardTile(handle:
     return <div class="project-tile">
       <a class="project-link" href={routes.dashboard.boards.show.href({ boardId: board.id })}>
         <span class="project-heading"><span class="project-mark" aria-hidden="true"><i /><i /><i /></span><strong>{board.name}</strong><ArrowRightIcon /></span>
-        {!compact && <span class="project-preview">{board.previews.length ? board.previews.map(card => <span><i />{card.title}</span>) : <span class="project-preview-empty">Your next good idea goes here.</span>}</span>}
+        {!compact && <span class="project-preview">{board.previews.length ? board.previews.map(card => <span key={card.id}><i />{card.title}</span>) : <span class="project-preview-empty">Your next good idea goes here.</span>}</span>}
         <span class="project-footer"><span>{board.total - board.done} open <span class="project-divider">/</span> {board.done} done</span><span class="project-progress" aria-label={`${board.done} of ${board.total} cards done`}><i style={{ width: `${board.total ? board.done / board.total * 100 : 0}%` }} /></span></span>
       </a>
       {!compact && <button type="button" class="icon-btn project-delete" aria-label={`Delete board "${board.name}"`} mix={on('click', () => dialog?.showModal())}><TrashIcon /></button>}
