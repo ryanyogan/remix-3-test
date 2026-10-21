@@ -269,14 +269,14 @@ for (let database of ['sqlite', 'd1'] as const) {
       let { call, router, db, uploads, userId } = await setup(database)
       let token = await data(await call(t.create.href(), { name: 'CLI' }))
       assert.match(token.token, /^trx_/)
-      let response = await call(t.index.href())
+      let response = await call(routes.dashboard.account.href())
       assert.equal(response.headers.get('Cache-Control'), 'private, no-store')
-      let tokens = await data(response)
-      assert.equal(tokens[0].name, 'CLI')
-      assert.equal(tokens[0].token, undefined)
+      let html = await response.text()
+      assert.ok(html.includes('CLI'))
+      assert.equal(html.includes(token.token), false)
       let bearer = { Authorization: `Bearer ${token.token}`, Accept: 'application/json' }
       assert.equal(
-        (await router.fetch(new Request(new URL(t.index.href(), origin), { headers: bearer })))
+        (await router.fetch(new Request(new URL(t.create.href(), origin), { method: 'POST', headers: { ...bearer, Origin: origin } })))
           .status,
         401,
       )

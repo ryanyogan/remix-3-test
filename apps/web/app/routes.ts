@@ -17,7 +17,6 @@ export const routes = route({
     navigation: get('/navigation'),
     search: get('/search'),
     tokens: route('/account/tokens', {
-      index: get('/'),
       create: post('/'),
       revoke: post('/:tokenId/revoke'),
     }),

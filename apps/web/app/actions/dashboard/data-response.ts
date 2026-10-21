@@ -52,7 +52,7 @@ export async function dataResponse(
   return Response.json({ error: message }, { status, headers: privateHeaders })
 }
 
-function wantsJson(request: Request) {
+export function wantsJson(request: Request) {
   return request.headers.get('Accept')?.includes('application/json') ?? false
 }
 

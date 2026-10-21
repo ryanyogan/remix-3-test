@@ -25,7 +25,7 @@ import { parseFormData } from './middleware/form-data.ts'
 import { loadUploads } from './middleware/uploads.ts'
 import { routes } from './routes.ts'
 import { sameOrigin } from './middleware/same-origin.ts'
-import tokensController from './actions/dashboard/tokens/controller.ts'
+import tokensController from './actions/dashboard/tokens/controller.tsx'
 import uploadsController from './actions/dashboard/uploads/controller.ts'
 
 export interface AppRouterOptions {

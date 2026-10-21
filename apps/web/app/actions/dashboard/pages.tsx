@@ -9,7 +9,7 @@ import type { User } from '../../data/tables.ts'
 import type { Theme } from '../../ui/theme.ts'
 import type { ProgressSummary } from './boards/data.ts'
 import { BoardProgressBars, CompletionDonut, CreatedChart, StatTiles } from './charts.tsx'
-import { ApiTokens } from './public/api-tokens.tsx'
+import { ApiTokens, type AccessToken } from './public/api-tokens.tsx'
 import { DashboardLayout } from './layout.tsx'
 import { routes } from '../../routes.ts'
 import { activityHref } from './public/activity-urls.ts'
@@ -86,9 +86,11 @@ export function InsightsPage(
   }
 }
 
-export function AccountPage(handle: Handle<{ user: User; theme?: Theme }>) {
+export function AccountPage(
+  handle: Handle<{ user: User; theme?: Theme; tokens: AccessToken[]; secret?: string; error?: string }>,
+) {
   return () => {
-    let { user, theme } = handle.props
+    let { user, theme, tokens, secret, error } = handle.props
 
     return (
       <DashboardLayout user={user} theme={theme} title="Account" current="account">
@@ -102,7 +104,7 @@ export function AccountPage(handle: Handle<{ user: User; theme?: Theme }>) {
             <dd class="mono">{new Date(user.created_at).toISOString().slice(0, 10)}</dd>
           </dl>
         </Panel>
-        <ApiTokens />
+        <ApiTokens tokens={tokens} secret={secret} error={error} />
       </DashboardLayout>
     )
   }

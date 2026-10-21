@@ -10,7 +10,8 @@ import { requireUser } from '../../middleware/require-user.tsx'
 import { routes } from '../../routes.ts'
 import { readTheme } from '../../ui/theme.ts'
 import { loadProgress } from './boards/data.ts'
-import { AccountPage, OverviewPage, ActivityContent, InsightsPage, NotificationsPage } from './pages.tsx'
+import { OverviewPage, ActivityContent, InsightsPage, NotificationsPage } from './pages.tsx'
+import { renderAccount } from './tokens/account.tsx'
 
 export default createController(routes.dashboard, {
   middleware: requireUser(),
@@ -57,11 +58,7 @@ export default createController(routes.dashboard, {
       let activity = await loadActivity(context.db, user.id, { view: 'notifications', before: Number(params.get('before')) || undefined, beforeId: params.get('beforeId') ?? '' })
       return context.render(<NotificationsPage user={user} theme={await readTheme(context.request)} activity={activity} />)
     },
-    async account(context) {
-      return context.render(
-        <AccountPage user={context.auth.identity} theme={await readTheme(context.request)} />,
-      )
-    },
+    account: (context) => renderAccount(context),
   },
 })
 
