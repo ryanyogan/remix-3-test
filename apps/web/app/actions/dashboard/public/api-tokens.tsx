@@ -9,9 +9,9 @@ export const ApiTokens = clientEntry(import.meta.url, function ApiTokens(handle:
   let error = ''
   let busy = false
   async function load() {
-    try { tokens = await appRequest<Token[]>(routes.dashboard.tokens.index.href()) }
+    try { tokens = await appRequest<Token[]>(routes.dashboard.tokens.index.href(), 'GET', undefined, handle.signal) }
     catch (e) { error = (e as Error).message }
-    handle.update()
+    if (!handle.signal.aborted) handle.update()
   }
   return () => <section class="panel token-panel">
     <h2>Make it yours.</h2>
@@ -25,14 +25,14 @@ export const ApiTokens = clientEntry(import.meta.url, function ApiTokens(handle:
           let data = await appRequest<{ token: string }>(routes.dashboard.tokens.create.href(), 'POST', { name: new FormData(form).get('name') })
           secret = data.token; form.reset(); await load()
         } catch (e) { error = (e as Error).message }
-        finally { busy = false; handle.update() }
+        finally { busy = false; if (!handle.signal.aborted) handle.update() }
       })}><input class="field" name="name" aria-label="Token name" placeholder="e.g. My automation" required maxLength={80} disabled={busy} /><button class="btn btn-primary" disabled={busy}>Create token</button></form>
       {secret && <div><p>Copy this token now. It is only shown once.</p><code class="token-secret">{secret}</code><button class="btn btn-ghost" type="button" mix={on('click', () => { secret = ''; handle.update() })}>I’ve saved it</button></div>}
       <ul class="step-list">{tokens.map((token) => <li key={token.id}><span>{token.name} <small class="mono">{new Date(token.created_at).toLocaleDateString()}</small></span><button class="btn btn-ghost" type="button" disabled={busy} mix={on('click', async () => {
         busy = true; error = ''; handle.update()
         try { await appRequest(routes.dashboard.tokens.revoke.href({ tokenId: token.id }), 'POST'); secret = ''; await load() }
         catch (e) { error = (e as Error).message }
-        finally { busy = false; handle.update() }
+        finally { busy = false; if (!handle.signal.aborted) handle.update() }
       })}>Revoke</button></li>)}</ul>
       {tokens.length === 0 && <p class="mono">No active tokens.</p>}
     </>}

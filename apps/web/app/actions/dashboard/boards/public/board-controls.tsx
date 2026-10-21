@@ -117,7 +117,10 @@ export function BoardFilters(handle: Handle<{ board: BoardData; user: { id: stri
   function change(values: Partial<Filters>) { handle.props.onChange({ ...handle.props.filters, ...values }) }
   async function toggle() {
     expanded = !expanded; handle.update()
-    if (expanded) try { boards = await appRequest(routes.dashboard.boards.options.href()); error = ''; handle.update() } catch { error = 'Could not load boards'; handle.update() }
+    if (!expanded) return
+    try { boards = await appRequest(routes.dashboard.boards.options.href(), 'GET', undefined, handle.signal); error = '' }
+    catch { error = 'Could not load boards' }
+    if (!handle.signal.aborted) handle.update()
   }
   function choice(label: string, field: 'sort' | 'status' | 'assignee' | 'creator' | 'closer', options: [string, string][], defaultValue = '') {
     let value = handle.props.filters[field]

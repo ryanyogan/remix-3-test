@@ -596,6 +596,7 @@ function Card(handle: Handle<CardProps>) {
               )
               // After the browser has taken the drag image, so the image is not faded.
               setTimeout(() => {
+                if (handle.signal.aborted) return
                 dragging = true
                 handle.update()
               })
