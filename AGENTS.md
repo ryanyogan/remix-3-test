@@ -41,7 +41,7 @@ Production uses `trellix` (web) and `trellix-api` (Hono), configured separately 
 
 ```sh
 pnpm cf:migrate        # apply packages/data/migrations to the remote D1 database
-pnpm cf:deploy         # deploy API, then web (flags apply to both)
+pnpm cf:deploy         # apply migrations, then deploy API, then web (flags apply to both)
 pnpm cf:dev            # web Worker preview; use pnpm hmr for the complete local app
 npx wrangler tail trellix   # live logs (cf cannot stream logs yet)
 ```
