@@ -1,4 +1,4 @@
-import { clientEntry, css, on, ref } from 'remix/component'
+import { clientEntry, css, navigate, on, ref } from 'remix/component'
 import type { Handle } from 'remix/component'
 
 import { limits } from '../../../../data/limits.ts'
@@ -34,244 +34,259 @@ import { BoardFilters, ColumnMenu, defaultFilters, matchesFilters } from './boar
 // Motion is mostly the theme's CSS, driven by attributes: data-new (created here, so no entrance
 // stagger), data-dragging, data-drop-target, and data-landed (just moved; in the last column this
 // stamps the done check). Deletes and reflows use @remix-run/ui/animation.
-export const Board = clientEntry(
-  import.meta.url,
-  function Board(handle: Handle<{ board: BoardData; columnId?: string; user: { id: string; name: string } }>) {
-    let refreshed: BoardData | undefined
-    let refreshVersion = 0
-    let store = new BoardStore(handle.props.board.id, refresh)
-    async function refresh() {
-      let version = ++refreshVersion
-      try {
-        let board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: handle.props.board.id }))
-        if (version !== refreshVersion || handle.signal.aborted) return
-        refreshed = board
-        store.reloaded()
-        handle.update()
-      } catch { store.reject('Could not refresh the board. Reload the page to see the latest changes.') }
+interface BoardProps {
+  board: BoardData
+  columnId?: string
+  user: { id: string; name: string }
+}
+
+// Client navigation keeps this entry mounted and passes new props, so the board's own state lives
+// in a view keyed by board: moving to another board starts a fresh store. In a fragment, since the
+// renderer compares keys only among siblings, not on a lone root child.
+export const Board = clientEntry(import.meta.url, function Board(handle: Handle<BoardProps>) {
+  return () => <><BoardView key={handle.props.board.id} {...handle.props} /></>
+})
+
+function BoardView(handle: Handle<BoardProps>) {
+  let refreshed: BoardData | undefined
+  let refreshVersion = 0
+  let store = new BoardStore(handle.props.board.id, refresh)
+  async function refresh() {
+    let version = ++refreshVersion
+    try {
+      let board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: handle.props.board.id }), 'GET', undefined, handle.signal)
+      if (version !== refreshVersion || handle.signal.aborted) return
+      refreshed = board
+      store.reloaded()
+      handle.update()
+    } catch {
+      if (!handle.signal.aborted) store.reject('Could not refresh the board. Reload the page to see the latest changes.')
     }
-    let watching = handle.props.board.watching !== false
-    let watchPending = false
-    let notNowCreation: Promise<string> | undefined
-    let filters = defaultFilters()
-    let search: HTMLInputElement | undefined
-    let scroller: HTMLElement | undefined
-    let fresh = new Set<string>()
-    let landed = new Set<string>()
+  }
+  // Set by the watch toggle until a reload brings back the saved value.
+  let watching: boolean | undefined
+  let watchPending = false
+  let notNowCreation: Promise<string> | undefined
+  let filters = defaultFilters()
+  let search: HTMLInputElement | undefined
+  let scroller: HTMLElement | undefined
+  let fresh = new Set<string>()
+  let landed = new Set<string>()
 
-    store.addEventListener('change', () => handle.update(), { signal: handle.signal })
-    handle.frame.addEventListener('reloadComplete', () => { refreshed = undefined; store.reloaded() }, {
-      signal: handle.signal,
+  store.addEventListener('change', () => handle.update(), { signal: handle.signal })
+  handle.frame.addEventListener('reloadComplete', () => { refreshed = undefined; watching = undefined; store.reloaded() }, {
+    signal: handle.signal,
+  })
+
+  // While a card is dragged near (or past) the left or right edge of the lanes, scroll them
+  // sideways, and near the top or bottom of a lane's cards, scroll that lane. Faster the
+  // closer the pointer gets. Browsers do little of this for scrolling elements, so the board
+  // drives it from the drag's pointer position.
+  let dragX: number | null = null
+  let dragY = 0
+  let dragList: HTMLElement | null = null
+  let lastDragOver = 0
+  let lastFrame = 0
+  let frame = 0
+
+  function autoScroll(now: number) {
+    frame = 0
+    // Time-based, so the speed holds up when frames are slow or throttled.
+    let elapsed = Math.min(now - (lastFrame || now), 50)
+    lastFrame = now
+    // dragover keeps firing while the pointer rests; silence means the drag left the window.
+    if (!scroller || dragX === null || performance.now() - lastDragOver > 250) {
+      stopAutoScroll()
+      return
+    }
+    // Up to 1.2px per millisecond (about 20px a frame at 60fps) at the very edge.
+    let rect = scroller.getBoundingClientRect()
+    let x = edgeSpeed(dragX, rect.left, rect.right, Math.min(120, rect.width / 4))
+    if (x !== 0) scroller.scrollLeft += Math.round(x * 1.2 * elapsed)
+    if (dragList) {
+      let list = dragList.getBoundingClientRect()
+      let y = edgeSpeed(dragY, list.top, list.bottom, Math.min(64, list.height / 4))
+      if (y !== 0) dragList.scrollTop += Math.round(y * 1.2 * elapsed)
+    }
+    frame = requestAnimationFrame(autoScroll)
+  }
+
+  function stopAutoScroll() {
+    dragX = null
+    dragList = null
+    lastFrame = 0
+    if (frame) cancelAnimationFrame(frame)
+    frame = 0
+    // Snapping (on phones) would fight the scrolling, so it is off for the drag.
+    scroller?.removeAttribute('data-autoscroll')
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('keydown', (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable], dialog, [popover]')) return
+      if (event.key === '/' || event.key.toLowerCase() === 'f') { event.preventDefault(); search?.focus() }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        let lane = event.target instanceof Element ? event.target.closest('.lane') : null
+        let links = [...(lane ?? document).querySelectorAll<HTMLAnchorElement>('.lane:not([data-collapsed]) .card-open')].filter(link => link.getClientRects().length)
+        let index = links.indexOf(document.activeElement as HTMLAnchorElement)
+        let next = links[index < 0 ? 0 : Math.max(0, Math.min(links.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]
+        if (next) { event.preventDefault(); next.focus(); next.scrollIntoView({ block: 'nearest' }) }
+      }
+    }, { signal: handle.signal })
+    document.addEventListener(
+      'dragover',
+      (event) => {
+        if (!event.dataTransfer?.types.includes(CARD_MIME_TYPE)) return
+        dragX = event.clientX
+        dragY = event.clientY
+        dragList =
+          event.target instanceof Element
+            ? event.target.closest('.lane')?.querySelector<HTMLElement>('.lane-cards') ?? null
+            : null
+        lastDragOver = performance.now()
+        scroller?.setAttribute('data-autoscroll', '')
+        if (!frame) frame = requestAnimationFrame(autoScroll)
+      },
+      { signal: handle.signal },
+    )
+    for (let type of ['drop', 'dragend'] as const) {
+      document.addEventListener(type, stopAutoScroll, { capture: true, signal: handle.signal })
+    }
+    handle.signal.addEventListener('abort', stopAutoScroll)
+  }
+
+  function scrollToEnd() {
+    handle.queueTask(() => {
+      if (scroller) scroller.scrollLeft = scroller.scrollWidth
     })
+  }
 
-    // While a card is dragged near (or past) the left or right edge of the lanes, scroll them
-    // sideways, and near the top or bottom of a lane's cards, scroll that lane. Faster the
-    // closer the pointer gets. Browsers do little of this for scrolling elements, so the board
-    // drives it from the drag's pointer position.
-    let dragX: number | null = null
-    let dragY = 0
-    let dragList: HTMLElement | null = null
-    let lastDragOver = 0
-    let lastFrame = 0
-    let frame = 0
-
-    function autoScroll(now: number) {
-      frame = 0
-      // Time-based, so the speed holds up when frames are slow or throttled.
-      let elapsed = Math.min(now - (lastFrame || now), 50)
-      lastFrame = now
-      // dragover keeps firing while the pointer rests; silence means the drag left the window.
-      if (!scroller || dragX === null || performance.now() - lastDragOver > 250) {
-        stopAutoScroll()
+  let cards: CardActions = {
+    create(columnId, title, position) {
+      filters = defaultFilters()
+      let id = crypto.randomUUID()
+      fresh.add(id)
+      store.submit({ type: 'upsertItem', id, columnId, title, position })
+    },
+    move(card, columnId, position) {
+      if (columnId === `not-now-${handle.props.board.id}` && !(refreshed ?? handle.props.board).columns.some(c => c.id === columnId)) {
+        notNowCreation ??= appRequest<{ id: string }>(routes.dashboard.boards.upsertColumn.href({ boardId: handle.props.board.id }), 'POST', { name: 'Not Now' }).then(result => result.id)
+        void notNowCreation.then(id => {
+          store.submit({ type: 'upsertColumn', id, name: 'Not Now' })
+          store.submit({ ...card, type: 'upsertItem', columnId: id, position })
+        }).catch(error => { notNowCreation = undefined; store.reject(error.message) })
         return
       }
-      // Up to 1.2px per millisecond (about 20px a frame at 60fps) at the very edge.
-      let rect = scroller.getBoundingClientRect()
-      let x = edgeSpeed(dragX, rect.left, rect.right, Math.min(120, rect.width / 4))
-      if (x !== 0) scroller.scrollLeft += Math.round(x * 1.2 * elapsed)
-      if (dragList) {
-        let list = dragList.getBoundingClientRect()
-        let y = edgeSpeed(dragY, list.top, list.bottom, Math.min(64, list.height / 4))
-        if (y !== 0) dragList.scrollTop += Math.round(y * 1.2 * elapsed)
-      }
-      frame = requestAnimationFrame(autoScroll)
-    }
+      store.submit({ ...card, type: 'upsertItem', columnId, position })
+      landed.add(card.id)
+      let timer = setTimeout(() => {
+        landed.delete(card.id)
+        handle.update()
+      }, 1000)
+      handle.signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+    },
+    open(id) {
+      // A failed save already shows its error; opening would only reach a missing card.
+      store.whenItemSettled(id).then(() => {
+        if (!handle.signal.aborted) void navigate(routes.dashboard.cards.show.href({ boardId: handle.props.board.id, cardId: id }))
+      }, () => {})
+    },
+    isNew: (id) => fresh.has(id),
+    hasLanded: (id) => landed.has(id),
+  }
 
-    function stopAutoScroll() {
-      dragX = null
-      dragList = null
-      lastFrame = 0
-      if (frame) cancelAnimationFrame(frame)
-      frame = 0
-      // Snapping (on phones) would fight the scrolling, so it is off for the drag.
-      scroller?.removeAttribute('data-autoscroll')
-    }
+  return () => {
+    let board = refreshed ?? handle.props.board
+    let isWatching = watching ?? board.watching !== false
+    let view = applyMutations(board, store.mutations)
+    let matching = (item: ItemData) => matchesFilters(item, filters, { ...board, columns: view.columns }, handle.props.user.id)
+    let sortItems = (items: ItemData[]) => [...items].sort((a, b) => filters.sort === 'oldest' ? (a.createdAt ?? 0) - (b.createdAt ?? 0) : filters.sort === 'newest' ? (b.createdAt ?? 0) - (a.createdAt ?? 0) : (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    let notNow = view.columns.find(column => column.name.toLowerCase() === 'not now')
+    let columns = view.columns.filter(column => column !== notNow)
+    let first = columns[0]
+    let deferred = notNow ?? { id: `not-now-${board.id}`, name: 'Not Now', items: [], position: 0 }
+    let arranged = [deferred, ...columns]
+    let focused = arranged.find(column => column.id === handle.props.columnId)
+    let tools = <div class="board-tools-card">
+      <a class="add-card" href={`${routes.dashboard.cards.new.href()}?board=${encodeURIComponent(board.id)}${first ? `&column=${encodeURIComponent(first.id)}` : ''}`}>Add a card <kbd>C</kbd></a>
+      <div class="watching-title"><span>{isWatching ? 'Watching for new cards' : 'Watch for new cards'}</span></div>
+      <div class="board-watchers">{isWatching ? <span class="board-avatar" title={handle.props.user.name}>{initials(handle.props.user.name)}</span> : <span class="watching-empty">Get new cards in your notifications</span>}</div>
+      <button type="button" class="board-watch-toggle" aria-pressed={isWatching} disabled={watchPending} mix={on('click', async () => {
+        watchPending = true; handle.update()
+        try { await appRequest(routes.dashboard.boards.watch.href({ boardId: board.id }), 'POST', { watching: !isWatching }, handle.signal); watching = !isWatching }
+        catch (error) { if (!handle.signal.aborted) store.reject(error instanceof Error ? error.message : 'Could not update watching') }
+        finally { if (!handle.signal.aborted) { watchPending = false; handle.update() } }
+      })}><BoardGlyph name={isWatching ? 'bell-off' : 'bell'} />{isWatching ? 'Stop watching' : 'Start watching'}</button>
+    </div>
 
-    if (typeof document !== 'undefined') {
-      document.addEventListener('keydown', (event) => {
-        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
-        if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable], dialog, [popover]')) return
-        if (event.key === '/' || event.key.toLowerCase() === 'f') { event.preventDefault(); search?.focus() }
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-          let lane = event.target instanceof Element ? event.target.closest('.lane') : null
-          let links = [...(lane ?? document).querySelectorAll<HTMLAnchorElement>('.lane:not([data-collapsed]) .card-open')].filter(link => link.getClientRects().length)
-          let index = links.indexOf(document.activeElement as HTMLAnchorElement)
-          let next = links[index < 0 ? 0 : Math.max(0, Math.min(links.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))]
-          if (next) { event.preventDefault(); next.focus(); next.scrollIntoView({ block: 'nearest' }) }
-        }
-      }, { signal: handle.signal })
-      document.addEventListener(
-        'dragover',
-        (event) => {
-          if (!event.dataTransfer?.types.includes(CARD_MIME_TYPE)) return
-          dragX = event.clientX
-          dragY = event.clientY
-          dragList =
-            event.target instanceof Element
-              ? event.target.closest('.lane')?.querySelector<HTMLElement>('.lane-cards') ?? null
-              : null
-          lastDragOver = performance.now()
-          scroller?.setAttribute('data-autoscroll', '')
-          if (!frame) frame = requestAnimationFrame(autoScroll)
-        },
-        { signal: handle.signal },
-      )
-      for (let type of ['drop', 'dragend'] as const) {
-        document.addEventListener(type, stopAutoScroll, { capture: true, signal: handle.signal })
-      }
-      handle.signal.addEventListener('abort', stopAutoScroll)
-    }
-
-    function scrollToEnd() {
-      handle.queueTask(() => {
-        if (scroller) scroller.scrollLeft = scroller.scrollWidth
-      })
-    }
-
-    let cards: CardActions = {
-      create(columnId, title, position) {
-        filters = defaultFilters()
-        let id = crypto.randomUUID()
-        fresh.add(id)
-        store.submit({ type: 'upsertItem', id, columnId, title, position })
-      },
-      move(card, columnId, position) {
-        if (columnId === `not-now-${handle.props.board.id}` && !(refreshed ?? handle.props.board).columns.some(c => c.id === columnId)) {
-          notNowCreation ??= appRequest<{ id: string }>(routes.dashboard.boards.upsertColumn.href({ boardId: handle.props.board.id }), 'POST', { name: 'Not Now' }).then(result => result.id)
-          void notNowCreation.then(id => {
-            store.submit({ type: 'upsertColumn', id, name: 'Not Now' })
-            store.submit({ ...card, type: 'upsertItem', columnId: id, position })
-          }).catch(error => { notNowCreation = undefined; store.reject(error.message) })
-          return
-        }
-        store.submit({ ...card, type: 'upsertItem', columnId, position })
-        landed.add(card.id)
-        setTimeout(() => {
-          landed.delete(card.id)
-          handle.update()
-        }, 1000)
-      },
-      open(id) {
-        // A failed save already shows its error; opening would only reach a missing card.
-        store.whenItemSettled(id).then(() => {
-          location.assign(routes.dashboard.cards.show.href({ boardId: handle.props.board.id, cardId: id }))
-        }, () => {})
-      },
-      isNew: (id) => fresh.has(id),
-      hasLanded: (id) => landed.has(id),
-    }
-
-    return () => {
-      let board = refreshed ?? handle.props.board
-      let view = applyMutations(board, store.mutations)
-      let matching = (item: ItemData) => matchesFilters(item, filters, { ...board, columns: view.columns }, handle.props.user.id)
-      let sortItems = (items: ItemData[]) => [...items].sort((a, b) => filters.sort === 'oldest' ? (a.createdAt ?? 0) - (b.createdAt ?? 0) : filters.sort === 'newest' ? (b.createdAt ?? 0) - (a.createdAt ?? 0) : (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-      let notNow = view.columns.find(column => column.name.toLowerCase() === 'not now')
-      let columns = view.columns.filter(column => column !== notNow)
-      let first = columns[0]
-      let deferred = notNow ?? { id: `not-now-${board.id}`, name: 'Not Now', items: [], position: 0 }
-      let arranged = [deferred, ...columns]
-      let focused = arranged.find(column => column.id === handle.props.columnId)
-      let tools = <div class="board-tools-card">
-        <a class="add-card" href={`${routes.dashboard.cards.new.href()}?board=${encodeURIComponent(board.id)}${first ? `&column=${encodeURIComponent(first.id)}` : ''}`} data-rmx-document>Add a card <kbd>C</kbd></a>
-        <div class="watching-title"><span>{watching ? 'Watching for new cards' : 'Watch for new cards'}</span></div>
-        <div class="board-watchers">{watching ? <span class="board-avatar" title={handle.props.user.name}>{initials(handle.props.user.name)}</span> : <span class="watching-empty">Get new cards in your notifications</span>}</div>
-        <button type="button" class="board-watch-toggle" aria-pressed={watching} disabled={watchPending} mix={on('click', async () => {
-          watchPending = true; handle.update()
-          try { await appRequest(routes.dashboard.boards.watch.href({ boardId: board.id }), 'POST', { watching: !watching }); watching = !watching }
-          catch (error) { store.reject(error instanceof Error ? error.message : 'Could not update watching') }
-          finally { watchPending = false; handle.update() }
-        })}><BoardGlyph name={watching ? 'bell-off' : 'bell'} />{watching ? 'Stop watching' : 'Start watching'}</button>
-      </div>
-
-      return (
-        <div class={focused ? 'board board-column-view' : 'board'}>
-          <header key="board-header" class="board-heading">
-            <div class="board-title-row">
-              <a class="board-round-button" href={routes.dashboard.boards.webhooks.href({ boardId: board.id })} data-rmx-document title="Webhooks" aria-label="Webhooks"><BoardGlyph name="world" /></a>
-              <h1 class="board-title"><span>{view.name}</span></h1>
-              <a class="board-round-button" href={routes.dashboard.boards.edit.href({ boardId: board.id })} data-rmx-document title={`Settings for ${view.name}`} aria-label={`Settings for ${view.name}`}><BoardGlyph name="settings" /></a>
-            </div>
-            <BoardFilters board={board} user={handle.props.user} filters={filters} onChange={value => { filters = value; handle.update() }} searchRef={node => { search = node }} />
-            {focused && <a class="board-back-link" href={routes.dashboard.boards.show.href({ boardId: board.id })} data-rmx-document>← Back to board</a>}
-            {store.error && (
-              <p key="alert" role="alert" class="alert">
-                <span>{store.error}</span>
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  mix={on('click', () => store.dismissError())}
-                >
-                  Dismiss
-                </button>
-              </p>
-            )}
-          </header>
-
-          <div class="board-mobile-tools">{tools}</div>
-          <div key="board-lanes" class="lanes" mix={ref((node) => (scroller = node))}>
-            {arranged.map((column, index) => {
-              if (focused && focused.id !== column.id) return null
-              let next = arranged[index + 1]
-              return (
-                <Column
-                  key={column.id}
-                  boardId={board.id}
-                  boardName={view.name}
-                  author={handle.props.user.name}
-                  maybe={column.id === first?.id}
-                  notNow={column.id === deferred.id}
-                  tools={column.id === first?.id ? tools : undefined}
-                  columnId={column.id}
-                  name={column.name}
-                  color={column.color ?? 'yellow'}
-                  items={sortItems(column.items.filter(matching))}
-                  maximized={!!focused}
-                  canLeft={index > 2}
-                  canRight={index < arranged.length - 2}
-                  allItems={column.items}
-                  index={index}
-                  last={index === arranged.length - 1}
-                  next={next && { id: next.id, name: next.name, position: appendPosition(next.items) }}
-                  store={store}
-                  cards={cards}
-                />
-              )
-            })}
-            {!focused && <NewColumn
-              boardId={board.id}
-              index={view.columns.length}
-              editInitially={board.columns.length === 0}
-              store={store}
-              onAdd={scrollToEnd}
-            />}
+    return (
+      <div class={focused ? 'board board-column-view' : 'board'}>
+        <header key="board-header" class="board-heading">
+          <div class="board-title-row">
+            <a class="board-round-button" href={routes.dashboard.boards.webhooks.href({ boardId: board.id })} title="Webhooks" aria-label="Webhooks"><BoardGlyph name="world" /></a>
+            <h1 class="board-title"><span>{view.name}</span></h1>
+            <a class="board-round-button" href={routes.dashboard.boards.edit.href({ boardId: board.id })} title={`Settings for ${view.name}`} aria-label={`Settings for ${view.name}`}><BoardGlyph name="settings" /></a>
           </div>
+          <BoardFilters board={board} user={handle.props.user} filters={filters} onChange={value => { filters = value; handle.update() }} searchRef={node => { search = node }} />
+          {focused && <a class="board-back-link" href={routes.dashboard.boards.show.href({ boardId: board.id })}>← Back to board</a>}
+          {store.error && (
+            <p key="alert" role="alert" class="alert">
+              <span>{store.error}</span>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                mix={on('click', () => store.dismissError())}
+              >
+                Dismiss
+              </button>
+            </p>
+          )}
+        </header>
 
+        <div class="board-mobile-tools">{tools}</div>
+        <div key="board-lanes" class="lanes" mix={ref((node) => (scroller = node))}>
+          {arranged.map((column, index) => {
+            if (focused && focused.id !== column.id) return null
+            let next = arranged[index + 1]
+            return (
+              <Column
+                key={column.id}
+                boardId={board.id}
+                boardName={view.name}
+                author={handle.props.user.name}
+                maybe={column.id === first?.id}
+                notNow={column.id === deferred.id}
+                tools={column.id === first?.id ? tools : undefined}
+                columnId={column.id}
+                name={column.name}
+                color={column.color ?? 'yellow'}
+                items={sortItems(column.items.filter(matching))}
+                maximized={!!focused}
+                canLeft={index > 2}
+                canRight={index < arranged.length - 2}
+                allItems={column.items}
+                index={index}
+                last={index === arranged.length - 1}
+                next={next && { id: next.id, name: next.name, position: appendPosition(next.items) }}
+                store={store}
+                cards={cards}
+              />
+            )
+          })}
+          {!focused && <NewColumn
+            boardId={board.id}
+            index={view.columns.length}
+            editInitially={board.columns.length === 0}
+            store={store}
+            onAdd={scrollToEnd}
+          />}
         </div>
-      )
-    }
-  },
-)
+
+      </div>
+    )
+  }
+}
 
 // How fast to scroll toward an edge, from -1 to 1: zero outside the edge zones, full speed at
 // or past the edge.
@@ -430,7 +445,7 @@ function Column(handle: Handle<ColumnProps>) {
             save={(newName, color) => { store.submit({ type: 'upsertColumn', id: columnId, name: newName, color }) }}
             move={direction => { store.submit({ type: 'moveColumn', id: columnId, direction }) }}
             remove={() => confirm?.showModal()} />}
-          <a class="lane-maximize" aria-label={`Expand ${name} into grid view`} title="Expand column" href={`${routes.dashboard.boards.show.href({ boardId })}?column=${encodeURIComponent(columnId)}`} data-rmx-document><BoardGlyph name="grid" /></a>
+          <a class="lane-maximize" aria-label={`Expand ${name} into grid view`} title="Expand column" href={`${routes.dashboard.boards.show.href({ boardId })}?column=${encodeURIComponent(columnId)}`}><BoardGlyph name="grid" /></a>
         </div>
 
         <dialog key="confirm"
@@ -593,7 +608,7 @@ function Card(handle: Handle<CardProps>) {
         >
           <div class="board-card-tab"><span>{item.id.slice(0, 6).toUpperCase()}</span><span>{boardName}</span></div>
           <div class="card-row">
-            <h3 class="card-title"><a class="card-open" data-rmx-document href={routes.dashboard.cards.show.href({ boardId, cardId: item.id })} draggable={false} mix={on('click', (event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); cards.open(item.id) })}>{item.title}</a></h3>
+            <h3 class="card-title"><a class="card-open" href={routes.dashboard.cards.show.href({ boardId, cardId: item.id })} draggable={false} mix={on('click', (event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); cards.open(item.id) })}>{item.title}</a></h3>
             <div class="card-actions" mix={cardActionsStyle}>
               {next && (
                 <form

@@ -16,11 +16,11 @@ import { activityHref } from './public/activity-urls.ts'
 
 export function NotificationsPage(handle: Handle<{ user: User; theme?: Theme; activity: ActivityPage }>) {
   return () => <DashboardLayout user={handle.props.user} theme={handle.props.theme} title="Notifications" current="index" home>
-    <header class="board-tools-heading"><a href={routes.dashboard.index.href()} data-rmx-document>← Home</a><h1>Notifications</h1></header>
+    <header class="board-tools-heading"><a href={routes.dashboard.index.href()}>← Home</a><h1>Notifications</h1></header>
     <section class="board-settings-panel">
       <p>New cards on boards you’re watching.</p>
-      {handle.props.activity.events.length ? <ul class="board-notifications">{handle.props.activity.events.map(event => <li key={event.id}><a href={routes.dashboard.cards.show.href({ boardId: event.boardId, cardId: event.cardId })} data-rmx-document><strong>{event.title}</strong><span>{event.boardName} · {event.actorName}</span></a></li>)}</ul> : <p>You’re all caught up.</p>}
-      {handle.props.activity.next && <a href={`${routes.dashboard.notifications.href()}?before=${handle.props.activity.next.before}&beforeId=${encodeURIComponent(handle.props.activity.next.beforeId)}`} data-rmx-document>Older notifications</a>}
+      {handle.props.activity.events.length ? <ul class="board-notifications">{handle.props.activity.events.map(event => <li key={event.id}><a href={routes.dashboard.cards.show.href({ boardId: event.boardId, cardId: event.cardId })}><strong>{event.title}</strong><span>{event.boardName} · {event.actorName}</span></a></li>)}</ul> : <p>You’re all caught up.</p>}
+      {handle.props.activity.next && <a href={`${routes.dashboard.notifications.href()}?before=${handle.props.activity.next.before}&beforeId=${encodeURIComponent(handle.props.activity.next.beforeId)}`}>Older notifications</a>}
     </section>
   </DashboardLayout>
 }

@@ -55,9 +55,9 @@ export function DashboardLayout(handle: Handle<DashboardLayoutProps>) {
             </main>
           )}
           <footer class="dashboard-dock" aria-label="Quick access">
-            <a href={`${routes.dashboard.index.href()}?view=pinned`} data-rmx-document><PinIcon /><span>Pinned</span><kbd>P</kbd></a>
+            <a href={`${routes.dashboard.index.href()}?view=pinned`}><PinIcon /><span>Pinned</span><kbd>P</kbd></a>
             <Search dock />
-            <a href={routes.dashboard.notifications.href()} data-rmx-document><span>Notifications</span><kbd>N</kbd></a>
+            <a href={routes.dashboard.notifications.href()}><span>Notifications</span><kbd>N</kbd></a>
           </footer>
         </div>
       </Document>

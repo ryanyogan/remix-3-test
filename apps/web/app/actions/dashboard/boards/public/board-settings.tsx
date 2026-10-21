@@ -1,4 +1,4 @@
-import { clientEntry, on, ref, type Handle } from 'remix/component'
+import { clientEntry, navigate, on, ref, type Handle } from 'remix/component'
 import { routes } from '../../../../routes.ts'
 import { appRequest } from '../../public/app-request.ts'
 
@@ -11,7 +11,7 @@ export const BoardSettings = clientEntry(import.meta.url, function BoardSettings
       let name = String(new FormData(event.currentTarget).get('name')).trim()
       if (!name) return
       saving = true; error = ''; handle.update()
-      try { await appRequest(routes.dashboard.boards.rename.href({ boardId: handle.props.board.id }), 'POST', { name }); location.assign(routes.dashboard.boards.show.href({ boardId: handle.props.board.id })) }
+      try { await appRequest(routes.dashboard.boards.rename.href({ boardId: handle.props.board.id }), 'POST', { name }); await navigate(routes.dashboard.boards.show.href({ boardId: handle.props.board.id })) }
       catch (e) { error = e instanceof Error ? e.message : 'Could not save board'; saving = false; handle.update() }
     })}>
       <label for="board-settings-name">Name this board</label>

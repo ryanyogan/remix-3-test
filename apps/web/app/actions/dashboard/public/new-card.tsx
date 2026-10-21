@@ -4,5 +4,5 @@ import { PlusIcon } from '../../../ui/public/icons.tsx'
 import { routes } from '../../../routes.ts'
 
 export function NewCardButton(_handle: Handle<{ boards: NavigationData['boards'] }>) {
-  return () => <a href={routes.dashboard.cards.new.href()} data-rmx-document class="home-action new-card-trigger" aria-keyshortcuts="c"><PlusIcon />Add a card <kbd>C</kbd></a>
+  return () => <a href={routes.dashboard.cards.new.href()} class="home-action new-card-trigger" aria-keyshortcuts="c"><PlusIcon />Add a card <kbd>C</kbd></a>
 }

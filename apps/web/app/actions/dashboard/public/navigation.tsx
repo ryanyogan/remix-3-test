@@ -1,4 +1,4 @@
-import { clientEntry, on, ref, type Handle } from 'remix/component'
+import { clientEntry, navigate, on, ref, type Handle } from 'remix/component'
 import type { NavigationData } from '@trellix/contracts'
 import { routes } from '../../../routes.ts'
 import type { Theme } from '../../../ui/theme.ts'
@@ -37,6 +37,7 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
     dialog?.close()
     if (restoreFocus) trigger?.focus({ preventScroll: true })
   }
+  function go(href: string) { close(false); void navigate(href) }
   function links() { return [...(dialog?.querySelectorAll<HTMLAnchorElement>('[data-jump-link]') ?? [])].filter(el => el.getClientRects().length) }
   function move(event: Pick<KeyboardEvent, 'key' | 'preventDefault'>) {
     if (event.key === 'Escape') { event.preventDefault(); close(); return }
@@ -45,6 +46,9 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
     let items = links(), index = items.indexOf(document.activeElement as HTMLAnchorElement)
     items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
   }
+  // The layout stays mounted across client navigation; take the new page's boards and tags, or
+  // load them again on the next open.
+  handle.frame.addEventListener('reloadComplete', () => { data = handle.props.initial; error = '' }, { signal: handle.signal })
   handle.queueTask(() => {
     document.addEventListener('pointerdown', event => {
       if (dialog?.open && event.target instanceof Node && !dialog.contains(event.target) && !trigger?.contains(event.target)) close(false)
@@ -55,11 +59,11 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
       if (event.key.toLowerCase() === 'c') {
         event.preventDefault()
         let boardId = /^\/dashboard\/(?:boards|cards)\/([^/]+)(?:\/|$)/.exec(location.pathname)?.[1]
-        location.assign(routes.dashboard.cards.new.href() + (boardId && boardId !== 'new' ? `?board=${encodeURIComponent(decodeURIComponent(boardId))}` : ''))
+        void navigate(routes.dashboard.cards.new.href() + (boardId && boardId !== 'new' ? `?board=${encodeURIComponent(decodeURIComponent(boardId))}` : ''))
       }
-      if (event.key.toLowerCase() === 'b') { event.preventDefault(); location.assign(routes.dashboard.boards.new.href()) }
-      if (event.key.toLowerCase() === 'p') { event.preventDefault(); location.assign('/dashboard?view=pinned') }
-      if (event.key.toLowerCase() === 'n') { event.preventDefault(); location.assign(routes.dashboard.notifications.href()) }
+      if (event.key.toLowerCase() === 'b') { event.preventDefault(); void navigate(routes.dashboard.boards.new.href()) }
+      if (event.key.toLowerCase() === 'p') { event.preventDefault(); void navigate(`${routes.dashboard.index.href()}?view=pinned`) }
+      if (event.key.toLowerCase() === 'n') { event.preventDefault(); void navigate(routes.dashboard.notifications.href()) }
       if (event.key.toLowerCase() === 'j') { event.preventDefault(); opened ? close() : open() }
     }, { signal: handle.signal })
   })
@@ -87,31 +91,32 @@ export const Navigation = clientEntry(import.meta.url, function Navigation(handl
       <dialog id="jump-navigation" class="jump-dialog" aria-label="Jump to a board, person, place, or tag" mix={[
         ref(node => { dialog = node }), on('close', () => { opened = false; handle.update() }),
         on('keydown', move),
+        on('click', event => { if (event.target instanceof Element && event.target.closest('a[href]')) close(false) }),
       ]}>
         <div class="jump-input-wrap">
           <input type="search" class="jump-input" aria-label="Filter navigation" placeholder="Type to jump to a board, person, place, or tag…" value={query} autoComplete="off" mix={[
             ref(node => { input = node }), on('input', async event => { query = event.currentTarget.value; await handle.update(); if (query) dialog?.querySelectorAll('details').forEach(section => { section.open = true }) }),
             on('keydown', event => {
               if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return
-              if (!query && ['1', '2', '3'].includes(event.key)) { event.preventDefault(); location.assign(shortcuts[Number(event.key) - 1].href) }
-              if (event.key === 'Enter') { event.preventDefault(); let link = links()[0]; if (link) location.assign(link.href) }
+              if (!query && ['1', '2', '3'].includes(event.key)) { event.preventDefault(); go(shortcuts[Number(event.key) - 1].href) }
+              if (event.key === 'Enter') { event.preventDefault(); let link = links()[0]; if (link) go(link.href) }
             }),
           ]} />
           <button class="jump-close icon-btn" type="button" aria-label="Close navigation" mix={on('click', () => close())}><XIcon /></button>
         </div>
         <nav aria-label="Primary navigation" class="jump-content">
-          <div class="jump-shortcuts">{shortcuts.map((item, index) => matches(item.label) && <a href={item.href} data-rmx-document data-jump-link aria-current={item.current ? 'page' : undefined}><kbd>{index + 1}</kbd><item.icon /><strong>{item.label}</strong></a>)}</div>
+          <div class="jump-shortcuts">{shortcuts.map((item, index) => matches(item.label) && <a href={item.href} data-jump-link aria-current={item.current ? 'page' : undefined}><kbd>{index + 1}</kbd><item.icon /><strong>{item.label}</strong></a>)}</div>
           {loading && <p class="jump-message" role="status">Loading your boards and tags…</p>}
           {error && <p class="jump-message" role="alert">{error} <button type="button" mix={on('click', () => { void load() })}>Try again</button></p>}
           {(boards.length > 0 || matches('Add a board') || matches('All boards')) && <details class="jump-section" open><summary>Boards</summary><div>
-            {matches('Add a board') && <a href={routes.dashboard.boards.new.href()} data-rmx-document data-jump-link><PlusIcon />Add a board</a>}
-            {boards.map(board => <a href={routes.dashboard.boards.show.href({ boardId: board.id })} data-rmx-document data-jump-link><BoardIcon />{board.name}</a>)}
-            {matches('All boards') && <a href={routes.dashboard.boards.index.href()} data-rmx-document data-jump-link><BoardIcon />All boards</a>}
+            {matches('Add a board') && <a href={routes.dashboard.boards.new.href()} data-jump-link><PlusIcon />Add a board</a>}
+            {boards.map(board => <a href={routes.dashboard.boards.show.href({ boardId: board.id })} data-jump-link><BoardIcon />{board.name}</a>)}
+            {matches('All boards') && <a href={routes.dashboard.boards.index.href()} data-jump-link><BoardIcon />All boards</a>}
           </div></details>}
-          {!!tags.length && <details class="jump-section" open><summary>Tags</summary><div>{tags.map(tag => <a href={`${routes.dashboard.index.href()}?tag=${encodeURIComponent(tag)}`} data-rmx-document data-jump-link><TagIcon />{tag}</a>)}</div></details>}
-          {matches(user.name) && <details class="jump-section" open><summary>People</summary><div><a href={`${routes.dashboard.index.href()}?person=${encodeURIComponent(user.id)}`} data-rmx-document data-jump-link><UserIcon />{user.name}</a></div></details>}
+          {!!tags.length && <details class="jump-section" open><summary>Tags</summary><div>{tags.map(tag => <a href={`${routes.dashboard.index.href()}?tag=${encodeURIComponent(tag)}`} data-jump-link><TagIcon />{tag}</a>)}</div></details>}
+          {matches(user.name) && <details class="jump-section" open><summary>People</summary><div><a href={`${routes.dashboard.index.href()}?person=${encodeURIComponent(user.id)}`} data-jump-link><UserIcon />{user.name}</a></div></details>}
           {(settings.length > 0 || matches('Sign out')) && <details class="jump-section" open><summary>Settings</summary><div>
-            {settings.map(item => <a href={item.href} data-rmx-document data-jump-link><item.icon />{item.label}</a>)}
+            {settings.map(item => <a href={item.href} data-jump-link><item.icon />{item.label}</a>)}
             {!term && <div class="jump-theme"><ThemeToggle theme={theme} /><span>Appearance</span></div>}
             {matches('Sign out') && <form action={routes.logout.href()} method="post" data-rmx-document><button type="submit"><LogOutIcon />Sign out</button></form>}
           </div></details>}

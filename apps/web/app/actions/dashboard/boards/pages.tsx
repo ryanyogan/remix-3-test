@@ -78,15 +78,15 @@ type BoardToolsProps = { user: User; theme?: Theme; board: { id: string; name: s
 
 export function BoardSettingsPage(handle: Handle<BoardToolsProps>) {
   return () => <DashboardLayout user={handle.props.user} theme={handle.props.theme} title="Board Settings" current="boards" home>
-    <header class="board-tools-heading"><a href={routes.dashboard.boards.show.href({ boardId: handle.props.board.id })} data-rmx-document>← {handle.props.board.name}</a><h1>Board Settings</h1></header>
+    <header class="board-tools-heading"><a href={routes.dashboard.boards.show.href({ boardId: handle.props.board.id })}>← {handle.props.board.name}</a><h1>Board Settings</h1></header>
     <BoardSettings board={handle.props.board} />
   </DashboardLayout>
 }
 
 export function BoardWebhooksPage(handle: Handle<BoardToolsProps>) {
   return () => <DashboardLayout user={handle.props.user} theme={handle.props.theme} title="Webhooks" current="boards" home>
-    <header class="board-tools-heading"><a href={routes.dashboard.boards.show.href({ boardId: handle.props.board.id })} data-rmx-document>← {handle.props.board.name}</a><h1>Webhooks</h1></header>
-    <section class="board-settings-panel"><p>Webhooks notify another application when something happens in this board.</p><p>Webhook delivery isn’t available in Trellix yet. You can use the API to read and update this board.</p><a class="btn" href={routes.apiGuide.href()} data-rmx-document>View API documentation</a></section>
+    <header class="board-tools-heading"><a href={routes.dashboard.boards.show.href({ boardId: handle.props.board.id })}>← {handle.props.board.name}</a><h1>Webhooks</h1></header>
+    <section class="board-settings-panel"><p>Webhooks notify another application when something happens in this board.</p><p>Webhook delivery isn’t available in Trellix yet. You can use the API to read and update this board.</p><a class="btn" href={routes.apiGuide.href()}>View API documentation</a></section>
   </DashboardLayout>
 }
 

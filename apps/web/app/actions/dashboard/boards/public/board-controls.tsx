@@ -1,6 +1,6 @@
 import * as menu from '@remix-run/ui/menu'
 import * as popover from '@remix-run/ui/popover'
-import { on, ref, type Handle, type RemixNode } from 'remix/component'
+import { navigate, on, ref, type Handle, type RemixNode } from 'remix/component'
 import { columnColors, type ColumnColor, type BoardData, type ItemData } from '@trellix/contracts'
 import { appRequest } from '../../public/app-request.ts'
 import { routes } from '../../../../routes.ts'
@@ -129,7 +129,7 @@ export function BoardFilters(handle: Handle<{ board: BoardData; user: { id: stri
   function select(event: menu.MenuSelectEvent) {
     let { name, value } = event.item
     if (value === null) return
-    if (name === 'board') location.assign(routes.dashboard.boards.show.href({ boardId: value }))
+    if (name === 'board') void navigate(routes.dashboard.boards.show.href({ boardId: value }))
     else if (name === 'tag') { let tags = handle.props.filters.tags; change({ tags: tags.includes(value) ? tags.filter(tag => tag !== value) : [...tags, value] }) }
     else change({ [name]: value })
   }

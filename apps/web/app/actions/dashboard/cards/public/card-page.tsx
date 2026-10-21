@@ -1,4 +1,4 @@
-import { clientEntry, on, ref, unsafeHTML, type Handle } from 'remix/component'
+import { clientEntry, navigate, on, ref, unsafeHTML, type Handle } from 'remix/component'
 import type { BoardData, CardDetailData, NavigationData } from '@trellix/contracts'
 import { routes } from '../../../../routes.ts'
 import { limits } from '../../../../data/limits.ts'
@@ -24,7 +24,17 @@ interface CardPageProps {
   initialColumn?: string
 }
 
+// Client navigation keeps this entry mounted and passes new props. The card's working state lives
+// in a view keyed by card and by top-frame reload, so every navigation here (another card, the
+// same card, or "Create and add another") starts over from the server's data.
 export const CardPage = clientEntry(import.meta.url, function CardPage(handle: Handle<CardPageProps>) {
+  let generation = 0
+  handle.frame.addEventListener('reloadComplete', () => { generation++; handle.update() }, { signal: handle.signal })
+  // In a fragment: the renderer compares keys only among siblings, not on a lone root child.
+  return () => <><CardView key={`${handle.props.detail?.id ?? 'new'}:${generation}`} {...handle.props} /></>
+})
+
+function CardView(handle: Handle<CardPageProps>) {
   let board = handle.props.board
   let detail = handle.props.detail
   let editing = !detail
@@ -44,11 +54,11 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     if (busy || !detail) return false
     busy = true; error = ''; handle.update()
     try {
-      await appRequest(href, 'POST', body)
-      detail = await appRequest<CardDetailData>(routes.dashboard.cards.data.href(params()))
+      await appRequest(href, 'POST', body, handle.signal)
+      detail = await appRequest<CardDetailData>(routes.dashboard.cards.data.href(params()), 'GET', undefined, handle.signal)
       return true
     } catch (e) { error = e instanceof Error ? e.message : 'Could not save that change.'; return false }
-    finally { busy = false; handle.update() }
+    finally { if (!handle.signal.aborted) { busy = false; handle.update() } }
   }
   function edit() {
     if (busy || !detail || editing) return
@@ -58,7 +68,7 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
   function cancel() {
     if (busy) return
     if (detail && editing) { editing = false; editorUploading = false; handle.update() }
-    else location.assign(back())
+    else void navigate(back())
   }
   async function save(addAnother = false) {
     if (busy || !board || !editorReady || editorUploading) return
@@ -73,8 +83,8 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
         await appRequest(routes.dashboard.cards.create.href({ boardId: board.id }), 'POST', payload)
         created = true
         if (coverFile) await uploadCover(creationId, coverFile)
-        location.assign(addAnother ? `${routes.dashboard.cards.new.href()}?board=${board.id}` : back())
-      } catch (e) { busy = false; error = e instanceof Error ? e.message : 'Could not create the card.'; handle.update() }
+        await navigate(addAnother ? `${routes.dashboard.cards.new.href()}?board=${board.id}` : back())
+      } catch (e) { if (handle.signal.aborted) return; busy = false; error = e instanceof Error ? e.message : 'Could not create the card.'; handle.update() }
     }
   }
   async function uploadCover(cardId: string, file: File) {
@@ -106,10 +116,11 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     try {
       if (detail) {
         await appRequest(routes.dashboard.cards.update.href(params()), 'POST', { boardId: id })
-        location.assign(routes.dashboard.cards.show.href({ boardId: id, cardId: detail.id }))
-      } else if (!created) board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: id }))
+        void navigate(routes.dashboard.cards.show.href({ boardId: id, cardId: detail.id }))
+        return
+      } else if (!created) board = await appRequest<BoardData>(routes.dashboard.boards.data.href({ boardId: id }), 'GET', undefined, handle.signal)
     } catch (e) { error = e instanceof Error ? e.message : 'Could not change boards.' }
-    finally { busy = false; handle.update() }
+    if (!handle.signal.aborted) { busy = false; handle.update() }
   }
   async function tag(value: string) {
     value = value.trim().replace(/^#/, '').toLowerCase()
@@ -159,8 +170,8 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
     let cover = detail?.cover_file_id ? `${routes.dashboard.cards.cover.href(params())}?v=${detail.cover_file_id}` : coverPreview
     let done = detail && board && board.columns.length > 1 && detail.column_id === board.columns.at(-1)?.id
     return <>
-      <a class="card-route-back" href={back()} data-rmx-document>Back to {board?.name ?? 'Home'}<kbd>ESC</kbd></a>
-      {!board ? <div class="card-route-empty"><h1>Add your first board</h1><p>Cards need a board to call home.</p><a class="home-action" href={routes.dashboard.boards.new.href()} data-rmx-document>Add a board <ArrowRightIcon /></a></div> : <>
+      <a class="card-route-back" href={back()}>Back to {board?.name ?? 'Home'}<kbd>ESC</kbd></a>
+      {!board ? <div class="card-route-empty"><h1>Add your first board</h1><p>Cards need a board to call home.</p><a class="home-action" href={routes.dashboard.boards.new.href()}>Add a board <ArrowRightIcon /></a></div> : <>
         <section class={detail ? "perma" : "perma perma-draft"} aria-label={detail ? 'Card' : 'New card'}>
           <aside class="perma-tools perma-tools-left" aria-label="Card appearance">
             {detail && <button class="perma-circle" type="button" disabled title="Golden tickets are not available yet" aria-label="Promote to Golden Ticket (not available yet)"><TicketIcon /></button>}
@@ -236,4 +247,4 @@ export const CardPage = clientEntry(import.meta.url, function CardPage(handle: H
       </>}
     </>
   }
-})
+}

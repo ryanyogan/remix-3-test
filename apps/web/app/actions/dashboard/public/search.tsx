@@ -1,5 +1,5 @@
 import * as listbox from '@remix-run/ui/listbox'
-import { clientEntry, on, ref, type Handle } from 'remix/component'
+import { clientEntry, navigate, on, ref, type Handle } from 'remix/component'
 import { routes } from '../../../routes.ts'
 import { isTyping } from './navigation.tsx'
 import { XIcon, ArrowRightIcon } from '../../../ui/public/icons.tsx'
@@ -14,7 +14,7 @@ export const Search = clientEntry(import.meta.url, function Search(handle: Handl
   function href(card: Result) { return routes.dashboard.cards.show.href({ boardId: card.board_id, cardId: card.id }) }
   function go(id: string | null) {
     let card = results.find(result => result.id === id)
-    if (card) { dialog?.close(); window.location.assign(href(card)) }
+    if (card) { dialog?.close(); void navigate(href(card)) }
   }
   async function search(append = false) {
     request?.abort(); let current = request = new AbortController()
