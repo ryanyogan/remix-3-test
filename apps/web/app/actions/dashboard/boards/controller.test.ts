@@ -28,6 +28,19 @@ function post(
   })
 }
 
+// What the enhanced board sends: JSON, asking for JSON back.
+function send(href: string, cookie: string, body: Record<string, unknown> = {}) {
+  return new Request(new URL(href, origin), {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { Origin: origin, Cookie: cookie, ...json, 'Content-Type': 'application/json' },
+  })
+}
+
+// The browser generates card, column, and file ids as UUIDs.
+const id = (name: string) =>
+  `00000000-0000-4000-8000-${[...name].map((c) => c.charCodeAt(0).toString(16)).join('').padStart(12, '0').slice(-12)}`
+
 async function setup(database: 'sqlite' | 'd1' = 'sqlite') {
   let { db, router, uploads } = await createTestRouter(database)
   let cookie = await signUp(router)
@@ -111,14 +124,14 @@ describe('boards', () => {
     let html = await response.text()
     assert.match(html, /class="perma-frame"/)
     assert.match(html, /Create card/)
-    await router.fetch(post(routes.dashboard.boards.upsertItem.href({ boardId: board.id }), cookie, { id: 'route-card', columnId: columns[0].id, title: 'Full page card' }))
-    let href = routes.dashboard.cards.show.href({ boardId: board.id, cardId: 'route-card' })
+    await router.fetch(post(routes.dashboard.boards.upsertItem.href({ boardId: board.id }), cookie, { id: id('route-card'), columnId: columns[0].id, title: 'Full page card' }))
+    let href = routes.dashboard.cards.show.href({ boardId: board.id, cardId: id('route-card') })
     response = await router.fetch(get(href, cookie))
     assert.equal(response.status, 200)
     html = await response.text()
     assert.match(html, /Full page card/)
     assert.equal(html.includes('class="card-sheet"'), false)
-    response = await router.fetch(get(routes.dashboard.boards.show.href({ boardId: board.id }) + '?card=route-card', cookie))
+    response = await router.fetch(get(routes.dashboard.boards.show.href({ boardId: board.id }) + `?card=${id('route-card')}`, cookie))
     assert.equal(response.headers.get('Location'), href)
     let other = await signUp(router, 'card-other@example.test')
     assert.equal((await router.fetch(get(href, other))).status, 404)
@@ -141,45 +154,36 @@ describe('boards', () => {
     assert.match(html, /In progress/)
   })
 
-  it('creates, moves, and deletes cards, answering fetches with 204', async () => {
+  it('creates, moves, and deletes cards, answering fetches with JSON', async () => {
     let { db, router, cookie, board, columns } = await setup()
     let [todo, , done] = columns
     let itemsHref = routes.dashboard.boards.upsertItem.href({ boardId: board.id })
 
     let create = await router.fetch(
-      post(
-        itemsHref,
-        cookie,
-        { id: 'card-1', columnId: todo.id, title: ' Ship ', position: '1' },
-        json,
-      ),
+      send(itemsHref, cookie, { id: id('card-1'), columnId: todo.id, title: ' Ship ', position: 1 }),
     )
-    assert.equal(create.status, 204)
-    let card = await db.find(boardItems, 'card-1')
+    assert.equal(create.status, 200)
+    assert.deepEqual(await create.json(), { data: { id: id('card-1') } })
+    let card = await db.find(boardItems, id('card-1'))
     assert.equal(card?.title, 'Ship')
     assert.equal(card?.column_id, todo.id)
 
     let move = await router.fetch(
-      post(
-        itemsHref,
-        cookie,
-        { id: 'card-1', columnId: done.id, title: 'Ship', position: '1.5' },
-        json,
-      ),
+      send(itemsHref, cookie, { id: id('card-1'), columnId: done.id, title: 'Ship', position: 1.5 }),
     )
-    assert.equal(move.status, 204)
-    card = await db.find(boardItems, 'card-1')
+    assert.equal(move.status, 200)
+    card = await db.find(boardItems, id('card-1'))
     assert.equal(card?.column_id, done.id)
     assert.equal(Number(card?.position), 1.5)
 
     let deleteHref = routes.dashboard.boards.deleteItem.href({
       boardId: board.id,
-      itemId: 'card-1',
+      itemId: id('card-1'),
     })
-    assert.equal((await router.fetch(post(deleteHref, cookie, {}, json))).status, 204)
-    assert.equal(await db.find(boardItems, 'card-1'), null)
+    assert.equal((await router.fetch(send(deleteHref, cookie, {}))).status, 204)
+    assert.equal(await db.find(boardItems, id('card-1')), null)
     // Deleting again is not an error, so a delete can race a pending create.
-    assert.equal((await router.fetch(post(deleteHref, cookie, {}, json))).status, 204)
+    assert.equal((await router.fetch(send(deleteHref, cookie, {}))).status, 204)
   })
 
   it('redirects plain form posts back to the board and appends new cards', async () => {
@@ -209,25 +213,20 @@ describe('boards', () => {
     let { db, router, cookie, board } = await setup()
     let href = routes.dashboard.boards.upsertColumn.href({ boardId: board.id })
 
-    await router.fetch(post(href, cookie, { id: 'col-new', name: 'Review' }, json))
-    let column = await db.find(boardColumns, 'col-new')
+    await router.fetch(send(href, cookie, { id: id('col-new'), name: 'Review' }))
+    let column = await db.find(boardColumns, id('col-new'))
     assert.equal(column?.name, 'Review')
     assert.equal(Number(column?.position), 2.5)
 
-    await router.fetch(post(href, cookie, { id: 'col-new', name: 'QA' }, json))
-    assert.equal((await db.find(boardColumns, 'col-new'))?.name, 'QA')
+    await router.fetch(send(href, cookie, { id: id('col-new'), name: 'QA' }))
+    assert.equal((await db.find(boardColumns, id('col-new')))?.name, 'QA')
   })
 
   it('renames and deletes the board', async () => {
     let { db, router, cookie, board } = await setup()
 
     let rename = await router.fetch(
-      post(
-        routes.dashboard.boards.rename.href({ boardId: board.id }),
-        cookie,
-        { name: 'Ship it' },
-        json,
-      ),
+      send(routes.dashboard.boards.rename.href({ boardId: board.id }), cookie, { name: 'Ship it' }),
     )
     assert.equal(rename.status, 204)
     assert.equal((await db.find(boards, board.id))?.name, 'Ship it')
@@ -245,7 +244,7 @@ describe('boards', () => {
     let { db, router, cookie, board, columns } = await setup()
     let itemsHref = routes.dashboard.boards.upsertItem.href({ boardId: board.id })
     await router.fetch(
-      post(itemsHref, cookie, { id: 'mine', columnId: columns[0].id, title: 'Mine' }, json),
+      send(itemsHref, cookie, { id: id('mine'), columnId: columns[0].id, title: 'Mine' }),
     )
 
     let otherCookie = await signUp(router, 'grace@example.com', 'Grace Hopper')
@@ -260,15 +259,15 @@ describe('boards', () => {
     for (let request of [
       post(routes.dashboard.boards.rename.href({ boardId: board.id }), otherCookie, { name: 'x' }),
       post(routes.dashboard.boards.destroy.href({ boardId: board.id }), otherCookie),
-      post(itemsHref, otherCookie, { id: 'mine', columnId: columns[0].id, title: 'Stolen' }),
+      post(itemsHref, otherCookie, { id: id('mine'), columnId: columns[0].id, title: 'Stolen' }),
       post(
-        routes.dashboard.boards.deleteItem.href({ boardId: board.id, itemId: 'mine' }),
+        routes.dashboard.boards.deleteItem.href({ boardId: board.id, itemId: id('mine') }),
         otherCookie,
       ),
     ]) {
       assert.equal((await router.fetch(request)).status, 404)
     }
-    assert.equal((await db.find(boardItems, 'mine'))?.title, 'Mine')
+    assert.equal((await db.find(boardItems, id('mine')))?.title, 'Mine')
 
     // Their own board cannot adopt this board's card or column ids either.
     await router.fetch(post(routes.dashboard.boards.create.href(), otherCookie, { name: 'Theirs' }))
@@ -277,24 +276,14 @@ describe('boards', () => {
     let theirColumn = await db.findOne(boardColumns, { where: { board_id: theirs.id } })
     assert.ok(theirColumn)
     let hijack = await router.fetch(
-      post(
-        routes.dashboard.boards.upsertItem.href({ boardId: theirs.id }),
-        otherCookie,
-        { id: 'mine', columnId: theirColumn.id, title: 'Stolen' },
-        json,
-      ),
+      send(routes.dashboard.boards.upsertItem.href({ boardId: theirs.id }), otherCookie, { id: id('mine'), columnId: theirColumn.id, title: 'Stolen' }),
     )
     assert.equal(hijack.status, 404)
     let foreignColumn = await router.fetch(
-      post(
-        routes.dashboard.boards.upsertItem.href({ boardId: theirs.id }),
-        otherCookie,
-        { id: 'new', columnId: columns[0].id, title: 'Sneaky' },
-        json,
-      ),
+      send(routes.dashboard.boards.upsertItem.href({ boardId: theirs.id }), otherCookie, { id: id('new'), columnId: columns[0].id, title: 'Sneaky' }),
     )
     assert.equal(foreignColumn.status, 404)
-    assert.equal((await db.find(boardItems, 'mine'))?.title, 'Mine')
+    assert.equal((await db.find(boardItems, id('mine')))?.title, 'Mine')
   })
 })
 
@@ -313,14 +302,9 @@ async function setupCard(database: 'sqlite' | 'd1' = 'sqlite') {
   let context = await setup(database)
   let { router, cookie, board, columns } = context
   await router.fetch(
-    post(
-      routes.dashboard.boards.upsertItem.href({ boardId: board.id }),
-      cookie,
-      { id: 'card-1', columnId: columns[0].id, title: 'Has files', position: '1' },
-      json,
-    ),
+    send(routes.dashboard.boards.upsertItem.href({ boardId: board.id }), cookie, { id: id('card-1'), columnId: columns[0].id, title: 'Has files', position: 1 }),
   )
-  let uploadHref = routes.dashboard.boards.uploadFile.href({ boardId: board.id, itemId: 'card-1' })
+  let uploadHref = routes.dashboard.boards.uploadFile.href({ boardId: board.id, itemId: id('card-1') })
   return { ...context, uploadHref }
 }
 
@@ -333,15 +317,15 @@ describe('card attachments', () => {
         uploadHref,
         cookie,
         new File(['hello'], 'notes.txt', { type: 'text/plain' }),
-        'file-1',
+        id('file-1'),
       ),
     )
     assert.equal(response.status, 204)
 
-    let row = await db.find(boardItemFiles, 'file-1')
+    let row = await db.find(boardItemFiles, id('file-1'))
     assert.equal(row?.name, 'notes.txt')
     assert.equal(row?.size, 5)
-    assert.equal(await (await uploads.get('file-1'))?.text(), 'hello')
+    assert.equal(await (await uploads.get(id('file-1')))?.text(), 'hello')
 
     let html = await (
       await router.fetch(get(routes.dashboard.boards.show.href({ boardId: board.id }), cookie))
@@ -352,14 +336,14 @@ describe('card attachments', () => {
   it('serves images inline and other files as downloads', async () => {
     let { router, cookie, board, uploadHref } = await setupCard()
     await router.fetch(
-      upload(uploadHref, cookie, new File(['png'], 'pic.png', { type: 'image/png' }), 'img'),
+      upload(uploadHref, cookie, new File(['png'], 'pic.png', { type: 'image/png' }), id('img')),
     )
     await router.fetch(
-      upload(uploadHref, cookie, new File(['<svg/>'], 'x.svg', { type: 'image/svg+xml' }), 'svg'),
+      upload(uploadHref, cookie, new File(['<svg/>'], 'x.svg', { type: 'image/svg+xml' }), id('svg')),
     )
 
     let image = await router.fetch(
-      get(routes.dashboard.boards.file.href({ boardId: board.id, fileId: 'img' }), cookie),
+      get(routes.dashboard.boards.file.href({ boardId: board.id, fileId: id('img') }), cookie),
     )
     assert.equal(image.status, 200)
     assert.equal(image.headers.get('Content-Type'), 'image/png')
@@ -367,7 +351,7 @@ describe('card attachments', () => {
     assert.equal(image.headers.get('X-Content-Type-Options'), 'nosniff')
 
     let svg = await router.fetch(
-      get(routes.dashboard.boards.file.href({ boardId: board.id, fileId: 'svg' }), cookie),
+      get(routes.dashboard.boards.file.href({ boardId: board.id, fileId: id('svg') }), cookie),
     )
     assert.match(
       svg.headers.get('Content-Disposition') ?? '',
@@ -377,10 +361,10 @@ describe('card attachments', () => {
 
   it("keeps files private to the board's owner", async () => {
     let { router, cookie, board, uploadHref } = await setupCard()
-    await router.fetch(upload(uploadHref, cookie, new File(['secret'], 's.txt'), 'secret'))
+    await router.fetch(upload(uploadHref, cookie, new File([id('secret')], 's.txt'), id('secret')))
 
     let otherCookie = await signUp(router, 'grace@example.com', 'Grace Hopper')
-    let fileHref = routes.dashboard.boards.file.href({ boardId: board.id, fileId: 'secret' })
+    let fileHref = routes.dashboard.boards.file.href({ boardId: board.id, fileId: id('secret') })
     assert.equal((await router.fetch(get(fileHref, otherCookie))).status, 404)
     assert.equal(
       (await router.fetch(upload(uploadHref, otherCookie, new File(['x'], 'x.txt')))).status,
@@ -392,45 +376,45 @@ describe('card attachments', () => {
 
   it('removes stored bytes with the file, the card, and the board', async () => {
     let { router, uploads, cookie, board, uploadHref } = await setupCard()
-    for (let id of ['a', 'b', 'c']) {
-      await router.fetch(upload(uploadHref, cookie, new File([id], `${id}.txt`), id))
+    for (let name of ['a', 'b', 'c']) {
+      await router.fetch(upload(uploadHref, cookie, new File([name], `${name}.txt`), id(name)))
     }
 
     await router.fetch(
       post(
-        routes.dashboard.boards.deleteFile.href({ boardId: board.id, fileId: 'a' }),
+        routes.dashboard.boards.deleteFile.href({ boardId: board.id, fileId: id('a') }),
         cookie,
         {},
         json,
       ),
     )
-    assert.equal(await uploads.get('a'), null)
-    assert.ok(await uploads.get('b'))
+    assert.equal(await uploads.get(id('a')), null)
+    assert.ok(await uploads.get(id('b')))
 
     await router.fetch(
       post(
-        routes.dashboard.boards.deleteItem.href({ boardId: board.id, itemId: 'card-1' }),
+        routes.dashboard.boards.deleteItem.href({ boardId: board.id, itemId: id('card-1') }),
         cookie,
         {},
         json,
       ),
     )
-    assert.equal(await uploads.get('b'), null)
-    assert.equal(await uploads.get('c'), null)
+    assert.equal(await uploads.get(id('b')), null)
+    assert.equal(await uploads.get(id('c')), null)
   })
 
   it('deletes a column while preserving its cards and attachment bytes', async () => {
     let { db, router, uploads, cookie, board, columns, uploadHref } = await setupCard()
-    await router.fetch(upload(uploadHref, cookie, new File(['a'], 'a.txt'), 'a'))
+    await router.fetch(upload(uploadHref, cookie, new File(['a'], 'a.txt'), id('a')))
     let href = (columnId: string) =>
       routes.dashboard.boards.deleteColumn.href({ boardId: board.id, columnId })
 
-    let response = await router.fetch(post(href(columns[0].id), cookie, {}, json))
+    let response = await router.fetch(send(href(columns[0].id), cookie, {}))
     assert.equal(response.status, 204)
     assert.equal(await db.find(boardColumns, columns[0].id), null)
-    assert.equal((await db.find(boardItems, 'card-1'))?.column_id, columns[1].id)
-    assert.ok(await db.find(boardItemFiles, 'a'))
-    assert.ok(await uploads.get('a'))
+    assert.equal((await db.find(boardItems, id('card-1')))?.column_id, columns[1].id)
+    assert.ok(await db.find(boardItemFiles, id('a')))
+    assert.ok(await uploads.get(id('a')))
     assert.ok(await db.find(boardColumns, columns[1].id))
 
     // Already gone is fine; a plain form post goes back to the board.
@@ -459,7 +443,7 @@ describe('card attachments', () => {
 
     let empty = await router.fetch(upload(uploadHref, cookie, new File([], 'empty.txt')))
     assert.equal(empty.status, 422)
-    assert.deepEqual(await empty.json(), { error: 'Choose a file that is not empty' })
+    assert.deepEqual(await empty.json(), { error: `Choose one nonempty file of at most ${limits.fileLabel}` })
 
     let big = new File([new Uint8Array(limits.fileBytes + 1)], 'big.bin')
     let tooBig = await router.fetch(upload(uploadHref, cookie, big))
@@ -483,8 +467,9 @@ describe('card attachments', () => {
       await db.exec(sql`create trigger reject_files before insert on board_item_files
         begin select raise(abort, 'rejected'); end`)
 
-      await assert.rejects(router.fetch(upload(uploadHref, cookie, new File(['x'], 'x.txt'), 'file-1')), /rejected|execution failed/)
-      assert.equal(await uploads.has('file-1'), false)
+      let response = await router.fetch(upload(uploadHref, cookie, new File(['x'], 'x.txt'), id('file-1')))
+      assert.equal(response.status, 500)
+      assert.equal(await uploads.has(id('file-1')), false)
     })
   }
 })
@@ -495,21 +480,21 @@ describe('validation', () => {
     let itemsHref = routes.dashboard.boards.upsertItem.href({ boardId: board.id })
 
     let blank = await router.fetch(
-      post(itemsHref, cookie, { columnId: columns[0].id, title: '  ' }, json),
+      send(itemsHref, cookie, { columnId: columns[0].id, title: '  ' }),
     )
     assert.equal(blank.status, 422)
-    assert.deepEqual(await blank.json(), { error: 'Enter a card title' })
+    assert.deepEqual(await blank.json(), { error: 'Title must be 1–500 characters' })
 
     let long = await router.fetch(
-      post(itemsHref, cookie, { columnId: columns[0].id, title: 'x'.repeat(501) }, json),
+      send(itemsHref, cookie, { columnId: columns[0].id, title: 'x'.repeat(501) }),
     )
-    assert.deepEqual(await long.json(), { error: 'Keep card titles to 500 characters' })
+    assert.deepEqual(await long.json(), { error: 'Title must be 1–500 characters' })
 
     let plain = await router.fetch(
       post(routes.dashboard.boards.rename.href({ boardId: board.id }), cookie, { name: '' }),
     )
-    assert.equal(plain.status, 400)
-    assert.equal(await plain.text(), 'Enter a name')
+    assert.equal(plain.status, 422)
+    assert.equal(await plain.text(), 'Name must be 1–100 characters')
   })
 
   it('guards every write at the table, not only form input', async () => {

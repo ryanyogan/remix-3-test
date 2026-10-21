@@ -8,7 +8,7 @@ export default createController(routes.dashboard.tokens, {
     index: (context) => dataResponse(context, (services) => listAccessTokens(services)),
     create: (context) =>
       dataResponse(context, async (services) =>
-        createAccessToken(services, await input(context.request)),
+        createAccessToken(services, await input(context)),
       ),
     revoke: (context) =>
       dataResponse(context, (services) => revokeAccessToken(services, context.params)),

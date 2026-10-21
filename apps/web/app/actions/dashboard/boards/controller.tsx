@@ -1,30 +1,19 @@
 import * as operations from '@trellix/data/operations'
 import { listBoards } from '@trellix/data/boards'
-import { boardServices } from '@trellix/data/operation-context'
-import { dataResponse, input } from '../data-response.ts'
+import { boardServices, cardServices } from '@trellix/data/operation-context'
+import { OperationError } from '@trellix/data/operation-errors'
+import { dataResponse, input, type FormReply } from '../data-response.ts'
 import { loadWorkspace } from '@trellix/data/workspace'
 import * as s from 'remix/data-schema'
-import type { Issue } from 'remix/data-schema'
-import { DataTableValidationError } from 'remix/data-table'
 import { createFileResponse } from 'remix/response/file'
 import { redirect } from 'remix/response/redirect'
 import { createController } from 'remix/router'
 
-import { boardItemFiles, boardItems, boards } from '../../../data/tables.ts'
-import { limits } from '../../../data/limits.ts'
+import { boardItemFiles } from '../../../data/tables.ts'
 import { requireUser } from '../../../middleware/require-user.tsx'
 import { routes } from '../../../routes.ts'
 import { readTheme } from '../../../ui/theme.ts'
-import {
-  attachFile,
-  createBoard,
-  deleteColumn,
-  findOwnedBoard,
-  loadBoardData,
-  removeStoredFiles,
-  upsertColumn,
-  upsertItem,
-} from './data.ts'
+import { createBoard, findOwnedBoard, loadBoardData } from './data.ts'
 import {
   BoardPage,
   BoardsPage,
@@ -32,44 +21,18 @@ import {
   BoardSettingsPage,
   BoardWebhooksPage,
 } from './pages.tsx'
-import {
-  newBoardForm,
-  renameBoardForm,
-  uploadFileForm,
-  upsertColumnForm,
-  upsertItemForm,
-} from './schema.ts'
+import { newBoardForm } from './schema.ts'
 
-// Board mutations answer the enhanced board's fetch() calls with 204, and plain form posts
-// with a redirect back to the board.
-function mutated(request: Request, boardId: string) {
-  if (wantsJson(request)) {
-    return new Response(null, { status: 204 })
-  }
-  return redirect(routes.dashboard.boards.show.href({ boardId }), 303)
-}
+// Board writes answer the enhanced board's fetch() calls with JSON, and plain form posts with
+// a redirect back to the board. Both go through the shared operations, which validate once.
+const toBoard = (boardId: string): FormReply => ({
+  redirect: routes.dashboard.boards.show.href({ boardId }),
+})
 
-function wantsJson(request: Request) {
-  return request.headers.get('Accept')?.includes('application/json') ?? false
-}
-
-// A rejected mutation: the enhanced board shows `error` inline; a plain form post gets text.
-function invalid(request: Request, issues: readonly { message: string }[]) {
-  let error = issues[0]?.message ?? 'That change could not be saved'
-  if (wantsJson(request)) return Response.json({ error }, { status: 422 })
-  return new Response(error, { status: 400 })
-}
-
-// Runs a write, turning table-level validation failures into a 422 for the board.
-async function write(request: Request, run: () => Promise<Response>): Promise<Response> {
-  try {
-    return await run()
-  } catch (error) {
-    if (error instanceof DataTableValidationError) {
-      return invalid(request, error.issues as Issue[])
-    }
-    throw error
-  }
+// Deleting something that is already gone succeeds, so a delete can race a pending create.
+function unlessGone(error: unknown) {
+  if (error instanceof OperationError && error.status === 404) return
+  throw error
 }
 
 const notFound = () => new Response('Board not found', { status: 404 })
@@ -91,7 +54,7 @@ export default createController(routes.dashboard.boards, {
       dataResponse(context, async (services) =>
         operations.watchBoard(
           await boardServices(services, context.params.boardId),
-          await input(context.request),
+          await input(context),
         ),
       ),
     moveColumn: (context) =>
@@ -99,7 +62,7 @@ export default createController(routes.dashboard.boards, {
         operations.reorderBoardColumn(
           await boardServices(services, context.params.boardId),
           context.params,
-          await input(context.request),
+          await input(context),
         ),
       ),
     async index(context) {
@@ -181,143 +144,87 @@ export default createController(routes.dashboard.boards, {
       )
     },
 
-    async rename(context) {
-      if (context.request.headers.get('Content-Type')?.startsWith('application/json'))
-        return dataResponse(context, async (services) =>
+    rename: (context) =>
+      dataResponse(
+        context,
+        async (services) =>
           operations.renameBoard(
             await boardServices(services, context.params.boardId),
-            await input(context.request),
+            await input(context),
           ),
-        )
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      let parsed = s.parseSafe(renameBoardForm, context.formData)
-      if (!parsed.success) return invalid(context.request, parsed.issues)
-
-      return write(context.request, async () => {
-        await context.db.update(boards, board.id, { name: parsed.value.name })
-        return mutated(context.request, board.id)
-      })
-    },
-
-    async destroy(context) {
-      if (wantsJson(context.request))
-        return dataResponse(context, async (services) =>
+        toBoard(context.params.boardId),
+      ),
+    destroy: (context) =>
+      dataResponse(
+        context,
+        async (services) =>
           operations.removeBoard(await boardServices(services, context.params.boardId)),
-        )
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      await removeStoredFiles(context.db, context.uploads, { board_id: board.id })
-      await context.db.delete(boards, board.id)
-      if (wantsJson(context.request)) {
-        return new Response(null, { status: 204 })
-      }
-      return redirect(routes.dashboard.boards.index.href(), 303)
-    },
-
-    async upsertColumn(context) {
-      if (context.request.headers.get('Content-Type')?.startsWith('application/json'))
-        return dataResponse(context, async (services) =>
+        { redirect: routes.dashboard.boards.index.href() },
+      ),
+    upsertColumn: (context) =>
+      dataResponse(
+        context,
+        async (services) =>
           operations.createBoardColumn(
             await boardServices(services, context.params.boardId),
-            await input(context.request),
+            await input(context),
           ),
-        )
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      let parsed = s.parseSafe(upsertColumnForm, context.formData)
-      if (!parsed.success) return invalid(context.request, parsed.issues)
-
-      let { id = crypto.randomUUID(), name } = parsed.value
-      return write(context.request, async () => {
-        if (!(await upsertColumn(context.db, board.id, { id, name }))) return notFound()
-        return mutated(context.request, board.id)
-      })
-    },
-
-    // Deleting a column that is already gone succeeds, so a delete can race a pending create.
-    async deleteColumn(context) {
-      if (wantsJson(context.request))
-        return dataResponse(context, async (services) =>
+        toBoard(context.params.boardId),
+      ),
+    // A column that is already gone counts as deleted.
+    deleteColumn: (context) =>
+      dataResponse(
+        context,
+        async (services) =>
           operations.removeBoardColumn(
             await boardServices(services, context.params.boardId),
             context.params,
           ),
-        )
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      await deleteColumn(context.db, context.uploads, board.id, context.params.columnId)
-      return mutated(context.request, board.id)
-    },
-
-    async upsertItem(context) {
-      if (context.request.headers.get('Content-Type')?.startsWith('application/json'))
-        return dataResponse(context, async (services) =>
+        toBoard(context.params.boardId),
+      ),
+    upsertItem: (context) =>
+      dataResponse(
+        context,
+        async (services) =>
           operations.createBoardCard(
             await boardServices(services, context.params.boardId),
-            await input(context.request),
+            await input(context, { position: 'number' }),
           ),
-        )
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      let parsed = s.parseSafe(upsertItemForm, context.formData)
-      if (!parsed.success) return invalid(context.request, parsed.issues)
-
-      let { id = crypto.randomUUID(), ...values } = parsed.value
-      return write(context.request, async () => {
-        if (!(await upsertItem(context.db, board.id, { id, ...values }))) return notFound()
-        return mutated(context.request, board.id)
-      })
-    },
-
-    // Deleting a card that is already gone succeeds, so a delete can race a pending create.
-    async deleteItem(context) {
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      let item = await context.db.findOne(boardItems, {
-        where: { id: context.params.itemId, board_id: board.id },
-      })
-      if (item) {
-        await removeStoredFiles(context.db, context.uploads, { item_id: item.id })
-        await context.db.delete(boardItems, item.id)
-      }
-      return mutated(context.request, board.id)
-    },
-
-    async uploadFile(context) {
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      let parsed = s.parseSafe(uploadFileForm, context.formData)
-      if (!parsed.success) return invalid(context.request, parsed.issues)
-
-      let { id = crypto.randomUUID(), file } = parsed.value
-      return write(context.request, async () => {
-        let result = await attachFile(
-          context.db,
-          context.uploads,
-          board.id,
-          context.params.itemId,
-          {
-            id,
-            file,
-          },
-        )
-        if (result === 'missing') return new Response('Card not found', { status: 404 })
-        if (result === 'full') {
-          return invalid(context.request, [
-            { message: `A card can hold up to ${limits.filesPerCard} files` },
-          ])
-        }
-        return mutated(context.request, board.id)
-      })
-    },
+        toBoard(context.params.boardId),
+      ),
+    deleteItem: (context) =>
+      dataResponse(
+        context,
+        async (services) => {
+          let { boardId, itemId } = context.params
+          let board = await boardServices(services, boardId)
+          let card = await cardServices(board, boardId, itemId).catch(unlessGone)
+          if (card) await operations.removeBoardCard(card, { cardId: itemId })
+        },
+        toBoard(context.params.boardId),
+      ),
+    uploadFile: (context) =>
+      dataResponse(
+        context,
+        async (services) => {
+          let { boardId, itemId } = context.params
+          await operations.uploadCardFile(
+            await cardServices(services, boardId, itemId),
+            { cardId: itemId },
+            context.formData,
+          )
+        },
+        toBoard(context.params.boardId),
+      ),
+    deleteFile: (context) =>
+      dataResponse(
+        context,
+        async (services) => {
+          let board = await boardServices(services, context.params.boardId)
+          await operations.removeBoardFile(board, context.params).catch(unlessGone)
+        },
+        toBoard(context.params.boardId),
+      ),
 
     async file(context) {
       let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
@@ -339,20 +246,6 @@ export default createController(routes.dashboard.boards, {
         `${disposition}; filename*=UTF-8''${encodeURIComponent(row.name)}`,
       )
       return response
-    },
-
-    async deleteFile(context) {
-      let board = await findOwnedBoard(context.db, context.auth.identity.id, context.params.boardId)
-      if (board === null) return notFound()
-
-      let row = await context.db.findOne(boardItemFiles, {
-        where: { id: context.params.fileId, board_id: board.id },
-      })
-      if (row) {
-        await context.uploads.remove(row.id)
-        await context.db.delete(boardItemFiles, row.id)
-      }
-      return mutated(context.request, board.id)
     },
   },
 })

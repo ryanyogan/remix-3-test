@@ -22,6 +22,9 @@ interface CardPageProps {
   board?: Pick<BoardData, 'id' | 'name' | 'columns'>
   detail?: CardDetailData
   initialColumn?: string
+  initialTitle?: string
+  // Why the last plain form post was rejected.
+  error?: string
 }
 
 // Client navigation keeps this entry mounted and passes new props. The card's working state lives
@@ -38,8 +41,8 @@ function CardView(handle: Handle<CardPageProps>) {
   let board = handle.props.board
   let detail = handle.props.detail
   let editing = !detail
-  let busy = false, error = '', editorReady = false, editorUploading = false, commentUploading = false
-  let title = detail?.title ?? ''
+  let busy = false, error = handle.props.error ?? '', editorReady = false, editorUploading = false, commentUploading = false
+  let title = detail?.title ?? handle.props.initialTitle ?? ''
   let description = detail?.description_html || plainHtml(detail?.description ?? '')
   let comment = '', commentBlank = true, commentVersion = 0
   let draftTags: string[] = [], assigneeId: string | null = null
@@ -60,6 +63,20 @@ function CardView(handle: Handle<CardPageProps>) {
     } catch (e) { error = e instanceof Error ? e.message : 'Could not save that change.'; return false }
     finally { if (!handle.signal.aborted) { busy = false; handle.update() } }
   }
+  // Every form posts to its route, so the page also works before or without JavaScript. Enhanced,
+  // a form sends the same fields with fetch() and the page stays in place.
+  function send(form: HTMLFormElement, submitter: HTMLElement | null) {
+    return change(form.action, new FormData(form, submitter))
+  }
+  // Leaves the first column alone when the card is done, and reopens a done card there.
+  function doneColumn() {
+    let columns = board!.columns, last = columns.at(-1)!
+    return detail?.column_id === last.id ? (columns.find(column => column.name.toLowerCase() !== 'not now') ?? columns[0]).id : last.id
+  }
+  function newColumn() {
+    let columns = board!.columns
+    return columns.find(c => c.id === handle.props.initialColumn)?.id ?? (columns.find(column => column.name.toLowerCase() !== 'not now') ?? columns[0]).id
+  }
   function edit() {
     if (busy || !detail || editing) return
     title = detail.title; description = detail.description_html || plainHtml(detail.description)
@@ -71,7 +88,8 @@ function CardView(handle: Handle<CardPageProps>) {
     else void navigate(back())
   }
   async function save(addAnother = false) {
-    if (busy || !board || !editorReady || editorUploading) return
+    // A new card's description starts empty, so it can be created before the editor loads.
+    if (busy || !board || editorUploading || (detail && !editorReady)) return
     if (detail) {
       if (await change(routes.dashboard.cards.update.href(params()), { title: title.trim() || 'Untitled', descriptionHtml: description })) { editing = false; handle.update() }
     } else {
@@ -79,7 +97,7 @@ function CardView(handle: Handle<CardPageProps>) {
       busy = true; error = ''; handle.update()
       try {
         creationId ??= crypto.randomUUID()
-        let payload = { id: creationId, title: title.trim() || 'Untitled', columnId: board.columns.find(c => c.id === handle.props.initialColumn)?.id ?? (board.columns.find(column => column.name.toLowerCase() !== 'not now') ?? board.columns[0]).id, descriptionHtml: description, tags: draftTags, assigneeId, steps: draftSteps.map(step => ({ title: step.title, completed: !!step.completed })) }
+        let payload = { id: creationId, title: title.trim() || 'Untitled', columnId: newColumn(), descriptionHtml: description, tags: draftTags, assigneeId, steps: draftSteps.map(step => ({ title: step.title, completed: !!step.completed })) }
         await appRequest(routes.dashboard.cards.create.href({ boardId: board.id }), 'POST', payload)
         created = true
         if (coverFile) await uploadCover(creationId, coverFile)
@@ -139,8 +157,7 @@ function CardView(handle: Handle<CardPageProps>) {
   handle.signal.addEventListener('abort', () => { if (coverPreview) URL.revokeObjectURL(coverPreview) }, { once: true })
   function toggleDone() {
     if (!detail || !board || board.columns.length < 2) return
-    let last = board.columns.at(-1)!
-    void change(routes.dashboard.cards.update.href(params()), { columnId: detail.column_id === last.id ? (board.columns.find(column => column.name.toLowerCase() !== 'not now') ?? board.columns[0]).id : last.id })
+    void change(routes.dashboard.cards.update.href(params()), { columnId: doneColumn() })
   }
   handle.queueTask(() => document.addEventListener('keydown', event => {
     if (event.defaultPrevented || event.isComposing || event.repeat || document.querySelector('dialog[open], :popover-open')) return
@@ -197,23 +214,31 @@ function CardView(handle: Handle<CardPageProps>) {
               </header>
               <div class="perma-body">
                 <div class="perma-content">
-                  {editing ? <form id="card-edit-form" class="perma-edit" key="editing" mix={[ref(node => { editForm = node }), on('submit', event => { event.preventDefault(); void save() })]}>
+                  {editing ? <form id="card-edit-form" class="perma-edit" key="editing" method="post" action={detail ? routes.dashboard.cards.update.href(params()) : routes.dashboard.cards.create.href({ boardId: board.id })} mix={[ref(node => { editForm = node }), on('submit', event => { event.preventDefault(); void save(!detail && event.submitter?.getAttribute('name') === 'another') })]}>
+                    {!detail && board.columns.length > 0 && <input type="hidden" name="columnId" value={newColumn()} />}
                     <label class="visually-hidden" htmlFor="card-title">Card title</label>
-                    <textarea id="card-title" class="perma-title-input" aria-label="Card title" placeholder="Name it…" rows={1} maxLength={limits.cardTitle} defaultValue={title} mix={[ref(node => { node.focus() }), on('input', event => { title = event.currentTarget.value }), on('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void save() } })]} />
+                    <textarea id="card-title" name="title" class="perma-title-input" aria-label="Card title" placeholder="Name it…" rows={1} maxLength={limits.cardTitle} defaultValue={title} mix={[ref(node => { node.focus() }), on('input', event => { title = event.currentTarget.value }), on('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void save() } })]} />
                     <RichEditor value={description} label="Card description" placeholder="Add some notes, context, pictures, or video about this…" onChange={value => { description = value }} onReady={() => { editorReady = true; handle.update() }} onUploading={blocked => { editorUploading = blocked; handle.update() }} />
                   </form> : <div class="perma-story" key="story"><h1 id="card-detail-heading"><button type="button" mix={on('click', edit)}>{detail!.title}</button></h1>
                     {detail!.description_html ? <div class="lexxy-content perma-description" innerHTML={unsafeHTML(detail!.description_html)} /> : detail!.description ? <div class="perma-description plain-description">{detail!.description}</div> : null}
                   </div>}
                   <section class="perma-steps" aria-label="Steps">
-                    {steps.map(step => <div class="perma-step" key={step.id}><label><input type="checkbox" checked={!!step.completed} disabled={busy} mix={on('change', e => { if (detail) void change(routes.dashboard.cards.updateStep.href({ ...params(), stepId: step.id }), { completed: e.currentTarget.checked }); else { draftSteps = draftSteps.map(s => s.id === step.id ? { ...s, completed: e.currentTarget.checked ? 1 : 0 } : s); handle.update() } })}/><span class={step.completed ? 'step-complete' : ''}>{step.title}</span></label><button type="button" class="perma-remove-step" aria-label={`Delete step ${step.title}`} disabled={busy} mix={on('click', () => { if (detail) void change(routes.dashboard.cards.removeStep.href({ ...params(), stepId: step.id })); else { draftSteps = draftSteps.filter(s => s.id !== step.id); handle.update() } })}><XIcon /></button></div>)}
-                    <form class="perma-step-form" mix={on('submit', async event => {
+                    {steps.map(step => <div class="perma-step" key={step.id}>
+                      <form class="perma-form" method="post" action={detail ? routes.dashboard.cards.updateStep.href({ ...params(), stepId: step.id }) : undefined} mix={on('submit', event => { event.preventDefault(); if (detail) void send(event.currentTarget, event.submitter); else { draftSteps = draftSteps.map(s => s.id === step.id ? { ...s, completed: s.completed ? 0 : 1 } : s); handle.update() } })}>
+                        <label><input type="hidden" name="completed" value="false" /><input type="checkbox" name="completed" value="true" checked={!!step.completed} disabled={busy} mix={on('change', e => { e.currentTarget.form!.requestSubmit() })}/><span class={step.completed ? 'step-complete' : ''}>{step.title}</span></label>
+                      </form>
+                      <form class="perma-form" method="post" action={detail ? routes.dashboard.cards.removeStep.href({ ...params(), stepId: step.id }) : undefined} mix={on('submit', event => { event.preventDefault(); if (detail) void send(event.currentTarget, event.submitter); else { draftSteps = draftSteps.filter(s => s.id !== step.id); handle.update() } })}>
+                        <button type="submit" class="perma-remove-step" aria-label={`Delete step ${step.title}`} disabled={busy}><XIcon /></button>
+                      </form>
+                    </div>)}
+                    <form class="perma-step-form" method="post" action={detail ? routes.dashboard.cards.addStep.href(params()) : undefined} mix={on('submit', async event => {
                       event.preventDefault(); let form = event.currentTarget; let title = String(new FormData(form).get('title')).trim(); if (!title) return
-                      if (detail) { if (await change(routes.dashboard.cards.addStep.href(params()), { title })) form.reset() }
+                      if (detail) { if (await send(form, event.submitter)) form.reset() }
                       else if (draftSteps.length < 200) { draftSteps = [...draftSteps, { id: crypto.randomUUID(), title, completed: 0 }]; form.reset(); handle.update() }
                     })}><span class="perma-step-box" aria-hidden="true"/><input name="title" aria-label="New step" placeholder="Add a step…" required maxLength={300} disabled={busy} /><button type="submit" aria-label="Add step" disabled={busy}><PlusIcon /></button></form>
                   </section>
                 </div>
-                {detail && <nav class="perma-stages" aria-label="Card status">{board.columns.map(column => <button key={column.id} type="button" class={detail!.column_id === column.id ? 'perma-stage current' : 'perma-stage'} aria-current={detail!.column_id === column.id ? 'step' : undefined} disabled={busy || editing} mix={on('click', () => { void change(routes.dashboard.cards.update.href(params()), { columnId: column.id }) })}>{column.name}</button>)}</nav>}
+                {detail && <nav class="perma-stages" aria-label="Card status"><form class="perma-form" method="post" action={routes.dashboard.cards.update.href(params())} mix={on('submit', event => { event.preventDefault(); void send(event.currentTarget, event.submitter) })}>{board.columns.map(column => <button key={column.id} type="submit" name="columnId" value={column.id} class={detail!.column_id === column.id ? 'perma-stage current' : 'perma-stage'} aria-current={detail!.column_id === column.id ? 'step' : undefined} disabled={busy || editing}>{column.name}</button>)}</form></nav>}
               </div>
               <footer class="perma-meta">
                 <span class="perma-avatar" aria-hidden="true">{initials(detail?.author ?? user.name)}</span>
@@ -228,17 +253,17 @@ function CardView(handle: Handle<CardPageProps>) {
           </div>
           {detail && <aside class="perma-tools perma-tools-right" aria-label="Card actions">
             <button class="perma-circle" type="button" disabled title="Comment notifications are not available yet" aria-label="Watch card (not available yet)"><BellIcon /></button>
-            <button class="perma-circle pin-button" type="button" aria-label={detail?.pinned ? 'Unpin card' : 'Pin card'} aria-pressed={!!detail?.pinned} disabled={!detail || busy} mix={on('click', () => { void change(routes.dashboard.cards.update.href(params()), { pinned: !detail!.pinned }) })}><PinIcon /></button>
+            <form class="perma-form" method="post" action={routes.dashboard.cards.update.href(params())} mix={on('submit', event => { event.preventDefault(); void send(event.currentTarget, event.submitter) })}><button class="perma-circle pin-button" type="submit" name="pinned" value={String(!detail.pinned)} aria-label={detail.pinned ? 'Unpin card' : 'Pin card'} aria-pressed={!!detail.pinned} disabled={busy}><PinIcon /></button></form>
           </aside>}
           <div class="perma-actions">
-            {editing ? <><button type="submit" form="card-edit-form" class="perma-primary" disabled={busy || !editorReady || editorUploading}>{busy ? 'Saving…' : detail ? 'Save changes' : 'Create card'}</button><button class="perma-secondary" type="button" disabled={busy || (!detail && (!editorReady || editorUploading))} mix={on('click', () => { if (detail) cancel(); else void save(true) })}>{detail ? 'Cancel' : 'Create and add another'}</button></> : <><button class="perma-primary" type="button" disabled={busy} mix={on('click', edit)}>Edit <kbd>E</kbd></button><button class="perma-primary complete-button" type="button" disabled={busy || board.columns.length < 2} mix={on('click', toggleDone)}>{done ? 'Reopen' : 'Mark as Done'}<kbd>D</kbd></button></>}
+            {editing ? <><button type="submit" form="card-edit-form" class="perma-primary" disabled={busy || editorUploading || (!!detail && !editorReady)}>{busy ? 'Saving…' : detail ? 'Save changes' : 'Create card'}</button>{detail ? <button class="perma-secondary" type="button" disabled={busy} mix={on('click', cancel)}>Cancel</button> : <button class="perma-secondary" type="submit" form="card-edit-form" name="another" value="true" disabled={busy || editorUploading}>Create and add another</button>}</> : <><button class="perma-primary" type="button" disabled={busy} mix={on('click', edit)}>Edit <kbd>E</kbd></button>{board.columns.length > 1 ? <form class="perma-form" method="post" action={routes.dashboard.cards.update.href(params())} mix={on('submit', event => { event.preventDefault(); void send(event.currentTarget, event.submitter) })}><button class="perma-primary complete-button" type="submit" name="columnId" value={doneColumn()} disabled={busy}>{done ? 'Reopen' : 'Mark as Done'}<kbd>D</kbd></button></form> : <button class="perma-primary complete-button" type="button" disabled>Mark as Done<kbd>D</kbd></button>}</>}
           </div>
           {error && <p class="perma-error" role="alert">{error}</p>}
         </section>
         {detail && <section class="perma-discussion" aria-label="Comments">
           {detail.files.some(file => file.id !== detail!.cover_file_id) && <div class="perma-files">{detail.files.filter(file => file.id !== detail!.cover_file_id).map(file => <a href={routes.dashboard.boards.file.href({ boardId: board!.id, fileId: file.id })} key={file.id} download><PaperclipIcon />{file.name}</a>)}</div>}
           {[...detail.comments].reverse().map(entry => <article class="perma-comment" key={entry.id}><span class="perma-avatar" aria-hidden="true">{initials(entry.author)}</span><div class="perma-comment-content"><div class="perma-comment-meta"><strong>{entry.author}</strong><time dateTime={new Date(entry.created_at).toISOString()}>{age(entry.created_at)}</time></div>{entry.body_html ? <div class="lexxy-content" innerHTML={unsafeHTML(entry.body_html)} /> : <p class="plain-description">{entry.body}</p>}</div></article>)}
-          <div class="perma-comment perma-comment-new"><span class="perma-avatar" aria-hidden="true">{initials(user.name)}</span><form class="perma-comment-compose" mix={[ref(node => { commentForm = node }), on('submit', async event => {
+          <div class="perma-comment perma-comment-new"><span class="perma-avatar" aria-hidden="true">{initials(user.name)}</span><form class="perma-comment-compose" method="post" action={routes.dashboard.cards.addComment.href(params())} mix={[ref(node => { commentForm = node }), on('submit', async event => {
             event.preventDefault(); if (commentBlank || busy || commentUploading) return
             if (await change(routes.dashboard.cards.addComment.href(params()), { bodyHtml: comment })) { comment = ''; commentBlank = true; commentVersion++; handle.update() }
           })]}><RichEditor key={commentVersion} value="" label="Comment" onUploading={blocked => { commentUploading = blocked; handle.update() }} placeholder="Next, add some notes, context, pictures, or video about this…" onChange={(html, blank) => { comment = html; commentBlank = blank; handle.update() }} /><button class="perma-primary perma-post" type="submit" disabled={commentBlank || busy || commentUploading}>{busy ? 'Posting…' : 'Post'}</button></form></div>

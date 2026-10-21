@@ -439,9 +439,10 @@ export async function uploadCardFile(
     id,
     file,
   })
-  if (result !== 'attached')
+  if (result === 'missing') throw new OperationError(404, { message: 'Card not found' })
+  if (result === 'full')
     throw new OperationError(422, {
-      message: 'This card cannot accept another file',
+      message: `A card can hold up to ${limits.filesPerCard} files`,
     })
   return { id, name: file.name, size: file.size }
 }
