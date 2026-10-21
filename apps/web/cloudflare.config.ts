@@ -11,7 +11,11 @@ export default defineConfig({
     // Run near D1 instead of near the visitor: pages make several sequential queries.
     placement: { mode: 'smart' },
     assets: {
-      // The Worker serves /assets/* itself to fix module MIME types and cache headers.
+      // The Worker serves /assets/* itself to fix module MIME types and cache headers. Under Smart
+      // Placement this serves them from near D1, but direct serving is not an option: Static
+      // Assets 307-redirect every `name.@hash.ext` URL to its `%40` form, and the redirected
+      // response skips `_headers`, so .ts/.tsx modules would lose their JavaScript type. Assets
+      // are immutable for a year, so only first visits pay for the trip.
       runWorkerFirst: ['/assets/*'],
     },
     observability: {
